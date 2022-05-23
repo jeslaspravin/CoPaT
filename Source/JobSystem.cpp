@@ -1,0 +1,46 @@
+/*!
+ * \file JobSystem.cpp
+ *
+ * \author Jeslas
+ * \date May 2022
+ * \copyright
+ *  Copyright (C) Jeslas Pravin, Since 2022
+ *  @jeslaspravin pravinjeslas@gmail.com
+ *  License can be read in LICENSE file at this repository's root
+ */
+
+#include "JobSystem.h"
+#include "Platform/PlatformThreadingFunctions.h"
+
+#include <thread>
+
+COPAT_NS_INLINED
+namespace copat
+{
+
+JobSystem *JobSystem::singletonInstance = nullptr;
+
+void JobSystem::initialize(MainThreadTickFunc &&mainTick, void *inUserData)
+{
+    if (!singletonInstance)
+        singletonInstance = this;
+
+    if (!PlatformThreadingFuncs::createTlsSlot(tlsSlot))
+    {
+        return;
+    }
+    mainThreadTick = std::forward<MainThreadTickFunc>(mainTick);
+    userData = inUserData;
+    PlatformThreadingFuncs::setCurrentThreadName(COPAT_TCHAR("MainThread"));
+
+    u32 maxWorkers = calculateWorkersCount();
+    for (u32 i = 0; i < maxWorkers; ++i)
+    {
+        std::thread worker{ [this]() { doWorkerJobs(); } };
+        PlatformThreadingFuncs::setThreadName((COPAT_TCHAR("WorkerThread_") + COPAT_TOSTRING(i)).c_str(), worker.native_handle());
+        // Destroy when finishes
+        worker.detach();
+    }
+}
+
+} // namespace copat

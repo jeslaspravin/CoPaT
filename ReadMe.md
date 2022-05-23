@@ -34,6 +34,7 @@ Right now the library is just a bunch of headers and TU files
 - Convert to CMake library project
 - Add unit test and cover all feature's basic use cases
 - Integrate github's CI pipeline
+- Other platforms support in library
 - Ofcourse bug fixes :wink:
 
 ## External libraries used
