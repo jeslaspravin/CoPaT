@@ -22,6 +22,103 @@
 COPAT_NS_INLINED
 namespace copat
 {
+class JobSystem;
+
+using SpecialThreadQueueType = FAAArrayMPSCQueue<void>;
+using WorkerThreadQueueType = FAAArrayQueue<void>;
+
+/**
+ * Just to not leak thread include
+ */
+using SpecialThreadFuncType_INTERNAL = void (JobSystem::*)();
+void initializeAndRunSpecialThread_INTERNAL(SpecialThreadFuncType_INTERNAL threadFunc, EJobThreadType threadType, JobSystem *jobSystem);
+
+struct alignas(2 * CACHE_LINE_SIZE) SpecialJobReceivedEvent
+{
+    std::atomic_flag flag;
+
+    void notify()
+    {
+        flag.test_and_set(std::memory_order::release);
+        flag.notify_one();
+    }
+
+    void wait()
+    {
+        flag.wait(false, std::memory_order::acquire);
+        // Relaxed is fine this will not be reordered before wait acquire
+        flag.clear(std::memory_order::relaxed);
+    }
+};
+
+template <u32 SpecialThreadsCount>
+class SpecialThreadsPool
+{
+public:
+    constexpr static const u32 COUNT = SpecialThreadsCount;
+    JobSystem *ownerJobSystem = nullptr;
+
+    // It is okay to have as array as each queue will be aligned 2x the Cache line size
+    SpecialThreadQueueType specialQueues[COUNT];
+    SpecialJobReceivedEvent specialJobEvents[COUNT];
+    std::latch allSpecialsFinishedEvent{ COUNT };
+
+    void initialize(JobSystem *jobSystem)
+    {
+        COPAT_ASSERT(jobSystem);
+        ownerJobSystem = jobSystem;
+
+        initialSpecialThreads(std::make_integer_sequence<u32, COUNT>{});
+    }
+    void shutdown()
+    {
+        for (u32 i = 0; i < COUNT; ++i)
+        {
+            specialJobEvents[i].notify();
+        }
+        allSpecialsFinishedEvent.wait();
+    }
+
+    void enqueueJob(std::coroutine_handle<> coro, EJobThreadType enqueueToThread)
+    {
+        const u32 idx = threadTypeToIdx(enqueueToThread);
+        specialQueues[idx].enqueue(coro.address());
+
+        specialJobEvents[idx].notify();
+    }
+
+    SpecialThreadQueueType *getThreadJobsQueue(u32 idx) { return &specialQueues[idx]; }
+    SpecialJobReceivedEvent *getJobEvent(u32 idx) { return &specialJobEvents[idx]; }
+    void onSpecialThreadExit() { allSpecialsFinishedEvent.count_down(); }
+
+private:
+    static constexpr u32 threadTypeToIdx(EJobThreadType threadType) { return u32(threadType) - (u32(EJobThreadType::MainThread) + 1); }
+    static constexpr EJobThreadType idxToThreadType(u32 idx) { return EJobThreadType(idx + 1 + u32(EJobThreadType::MainThread)); }
+
+    template <u32 LastIdx>
+    void initialSpecialThreads(std::integer_sequence<u32, LastIdx>);
+    template <u32 FirstIdx, u32... Indices>
+    void initialSpecialThreads(std::integer_sequence<u32, FirstIdx, Indices...>);
+};
+
+/**
+ * For no special threads case
+ */
+template <>
+class SpecialThreadsPool<0>
+{
+public:
+    constexpr static const u32 COUNT = 0;
+
+    void initialize(JobSystem *jobSystem) {}
+    void shutdown() {}
+
+    void enqueueJob(std::coroutine_handle<> coro, EJobThreadType enqueueToThread) {}
+
+    SpecialThreadQueueType *getThreadJobsQueue(u32 idx) { return nullptr; }
+    SpecialJobReceivedEvent *getJobEvent(u32 idx) { return nullptr; }
+    void onSpecialThreadExit() {}
+};
 
 class COPAT_EXPORT_SYM JobSystem
 {
@@ -29,17 +126,16 @@ public:
     constexpr static const u32 MAX_SUPPORTED_WORKERS = 128;
 
     using MainThreadTickFunc = FunctionType<void, void *>;
-
-    using MainThreadQueueType = FAAArrayMPSCQueue<void>;
-    using WorkerThreadQueueType = FAAArrayQueue<void>;
+    using SpecialThreadsPoolType = SpecialThreadsPool<u32(EJobThreadType::WorkerThreads) - u32(EJobThreadType::MainThread) - 1>;
+    friend SpecialThreadsPoolType;
 
     struct PerThreadData
     {
-        bool bIsMainThread;
+        EJobThreadType threadType;
         WorkerThreadQueueType::HazardToken enqDqToken;
 
-        PerThreadData(WorkerThreadQueueType::HazardToken&& hazardToken)
-            : bIsMainThread(false)
+        PerThreadData(WorkerThreadQueueType::HazardToken &&hazardToken)
+            : threadType(EJobThreadType::WorkerThreads)
             , enqDqToken(std::forward<WorkerThreadQueueType::HazardToken>(hazardToken))
         {}
     };
@@ -54,11 +150,13 @@ private:
     // For waiting until all workers are finished
     std::latch workersFinishedEvent{ calculateWorkersCount() };
 
-    MainThreadQueueType mainThreadJobs;
+    SpecialThreadQueueType mainThreadJobs;
     std::atomic_flag bExitMain;
     // Main thread tick function type, This function gets ticked in main thread for every loop and then main job queue will be emptied
     MainThreadTickFunc mainThreadTick;
     void *userData;
+
+    SpecialThreadsPoolType specialThreadsPool;
 
     u32 tlsSlot;
 
@@ -77,6 +175,8 @@ public:
         // Just setting bExitMain flag to expected when shutting down
         bExitMain.test_and_set(std::memory_order::relaxed);
 
+        specialThreadsPool.shutdown();
+
         // Binary semaphore
         // while (!workersFinishedEvent.try_wait())
         //{
@@ -91,14 +191,14 @@ public:
         workersFinishedEvent.wait();
     }
 
-    void enqueueJob(std::coroutine_handle<> coro, bool bEnqueueToMain = false)
+    void enqueueJob(std::coroutine_handle<> coro, EJobThreadType enqueueToThread = EJobThreadType::WorkerThreads)
     {
         PerThreadData *threadData = getPerThreadData();
-        if (bEnqueueToMain)
+        if (enqueueToThread == EJobThreadType::MainThread)
         {
             mainThreadJobs.enqueue(coro.address());
         }
-        else
+        else if (enqueueToThread == EJobThreadType::WorkerThreads)
         {
             workerJobs.enqueue(coro.address(), threadData->enqDqToken);
             // We do not have to be very strict here as long as one or two is free and we get 0 or nothing is free and we release one or two
@@ -107,6 +207,10 @@ public:
             {
                 workerJobEvent.release();
             }
+        }
+        else
+        {
+            specialThreadsPool.enqueueJob(coro, enqueueToThread);
         }
     }
 
@@ -132,7 +236,7 @@ private:
     void runMain()
     {
         PerThreadData *tlData = getPerThreadData();
-        tlData->bIsMainThread = true;
+        tlData->threadType = EJobThreadType::MainThread;
         while (true)
         {
             if (bool(mainThreadTick))
@@ -156,6 +260,7 @@ private:
     void doWorkerJobs()
     {
         PerThreadData *tlData = getPerThreadData();
+        tlData->threadType = EJobThreadType::WorkerThreads;
         while (true)
         {
             while (void *coroPtr = workerJobs.dequeue(tlData->enqDqToken))
@@ -178,6 +283,51 @@ private:
         workersFinishedEvent.count_down();
         memDelete(tlData);
     }
+
+    template <u32 SpecialThreadIdx, EJobThreadType SpecialThreadType>
+    void doSpecialThreadJobs()
+    {
+        if constexpr (SpecialThreadsPoolType::COUNT != 0)
+        {
+            PerThreadData *tlData = getPerThreadData();
+            tlData->threadType = SpecialThreadType;
+            while (true)
+            {
+                while (void *coroPtr = specialThreadsPool.getThreadJobsQueue(SpecialThreadIdx)->dequeue())
+                {
+                    std::coroutine_handle<>::from_address(coroPtr).resume();
+                }
+
+                if (bExitMain.test(std::memory_order::relaxed))
+                {
+                    break;
+                }
+
+                specialThreadsPool.getJobEvent(SpecialThreadIdx)->wait();
+            }
+            specialThreadsPool.onSpecialThreadExit();
+            memDelete(tlData);
+        }
+    }
 };
+
+template <u32 SpecialThreadsCount>
+template <u32 LastIdx>
+void SpecialThreadsPool<SpecialThreadsCount>::initialSpecialThreads(std::integer_sequence<u32, LastIdx>)
+{
+    constexpr static const EJobThreadType threadType = idxToThreadType(LastIdx);
+    SpecialThreadFuncType_INTERNAL func = &JobSystem::doSpecialThreadJobs<LastIdx, threadType>;
+    initializeAndRunSpecialThread_INTERNAL(func, idxToThreadType(LastIdx), ownerJobSystem);
+}
+
+template <u32 SpecialThreadsCount>
+template <u32 FirstIdx, u32... Indices>
+void SpecialThreadsPool<SpecialThreadsCount>::initialSpecialThreads(std::integer_sequence<u32, FirstIdx, Indices...>)
+{
+    constexpr static const EJobThreadType threadType = idxToThreadType(FirstIdx);
+    SpecialThreadFuncType_INTERNAL func = &JobSystem::doSpecialThreadJobs<FirstIdx, threadType>;
+    initializeAndRunSpecialThread_INTERNAL(func, idxToThreadType(FirstIdx), ownerJobSystem);
+    initialSpecialThreads(std::index_sequence<Indices...>{});
+}
 
 } // namespace copat

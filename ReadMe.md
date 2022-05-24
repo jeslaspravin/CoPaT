@@ -60,7 +60,7 @@ I have run a few test cases in `x64` arch. However It should be fine in `x86` as
 
 # Usage
 ```cpp
-template <typename RetType, typename BasePromiseType, bool EnqAtInitialSuspend, bool InMainThread>
+template <typename RetType, typename BasePromiseType, bool EnqAtInitialSuspend, EJobThreadType EnqueueInThread>
 class JobSystemTaskType;
 ```
 Above *Awaitable* type is the main coroutine return type for this job system.
@@ -69,29 +69,28 @@ Above *Awaitable* type is the main coroutine return type for this job system.
 - `BasePromiseType` - can take `JobSystemPromiseBase` or `JobSystemPromiseBaseMC`. Once this coroutine job reaches `final_suspend` all the awaiters awaiting on this job will be resumed.
     * `JobSystemPromiseBase` for jobs which can be awaited in only one other coroutine
     * `JobSystemPromiseBaseMC` for jobs which can be awaited by more than one coroutines
-- `EnqAtInitialSuspend` - As the name suggests. Jobs with this `true` will be enqueued to job system automatically at `initial_suspend`, The thread to which it will be enqueued depends on next boolean `InMainThread`. while `false` means this job will start executing in current thread synchronously until it is manually switched in the middle.
-- `InMainThread` - If previous boolean is `true`, The value in this constant will used to determine whether job must be queued to main thread or one of worker thread.
+- `EnqAtInitialSuspend` - As the name suggests. Jobs with this `true` will be enqueued to job system automatically at `initial_suspend`, The thread to which it will be enqueued depends on next enum `EnqueueInThread`. while `false` means this job will start executing in current thread synchronously until it is manually switched in the middle.
+- `EnqueueInThread` - This value must be a valid enum of thread type to which this just must be queued to.
 
 ### Example
 ```cpp
 // Do not queues the task to job system automatically
-copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ false, /*InMainThread*/ false> noEnqJob();
+copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ false, /*EnqueueInThread*/ EJobThreadType::WorkerThreads> noEnqJob();
 // Enqueues to worker thread automatically
-copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ true, /*InMainThread*/ false> workerJob();
+copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ true, /*EnqueueInThread*/ EJobThreadType::WorkerThreads> workerJob();
 // Enqueues to main thread automatically
-copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ true, /*InMainThread*/ true> mainThreadJob();
+copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ true, /*EnqueueInThread*/ EJobThreadType::MainThread> mainThreadJob();
 ```
 
 ## Switching job thread
-You can switch between threads in the middle of job manually using `template <bool SwitchToMain> struct SwitchJobThreadAwaiter`
+You can switch between threads in the middle of job manually using `template <EJobThreadType SwitchToThread> struct SwitchJobThreadAwaiter`
 ```cpp
-// copat::JobSystemEnqTask<false> is just specialization of copat::JobSystemTaskType with boolean to decide which thread to enqueue this task
-// False means worker thread here
-copat::JobSystemEnqTask<false> testManualSwitch(u32 counter)
+// copat::JobSystemEnqTask<EJobThreadType::WorkerThreads> is just specialization of copat::JobSystemTaskType with boolean to decide which thread to enqueue this task
+copat::JobSystemEnqTask<EJobThreadType::WorkerThreads> testManualSwitch(u32 counter)
 {
     std::cout << copat::PlatformThreadingFuncs::getCurrentThreadName() << " is the executor, Counter : " << counter << std::endl;
     // Switching to main thread
-    co_await copat::SwitchJobThreadAwaiter<true>{};
+    co_await copat::SwitchJobThreadAwaiter<EJobThreadType::MainThread>{};
     std::cout << copat::PlatformThreadingFuncs::getCurrentThreadName() << " is it main thread, Counter : " << counter << std::endl;
 }
 ```
@@ -100,8 +99,8 @@ copat::JobSystemEnqTask<false> testManualSwitch(u32 counter)
 You can lock wait on a single job/awaitable using `copat::waitOnAwaitable(awaitable)`. Be aware that if you wait on a job that is already queued in same thread it will lead to dead-lock.
 The thread that calls this will wait until the job is finished.
 ```cpp
-copat::JobSystemReturnableTask<u32&, true, false> testCoroWait();
-copat::JobSystemEnqTask<false> testCoroWaitNoRet();
+copat::JobSystemReturnableTask<u32&, true, EJobThreadType::WorkerThreads> testCoroWait();
+copat::JobSystemEnqTask<EJobThreadType::WorkerThreads> testCoroWaitNoRet();
 
 auto retJob = testCoroWait();
 auto noretJob = testCoroWaitNoRet();
@@ -120,8 +119,8 @@ Once first job is finished second job resumes in same thread of awaited job
 
 ### Example
 ```cpp
-copat::JobSystemReturnableTask<u32&, true, false> testCoroWait();
-copat::JobSystemEnqTask<false> testCoroWaitNoRet();
+copat::JobSystemReturnableTask<u32&, true, EJobThreadType::WorkerThreads> testCoroWait();
+copat::JobSystemEnqTask<EJobThreadType::WorkerThreads> testCoroWaitNoRet();
 
 /**
  * This job awaits until all the sub tasks this starts and then switches to main thread and executes few lines of code
@@ -133,13 +132,13 @@ copat::NormalFuncAwaiter testawaitAll()
     co_await copat::awaitAllTasks(ret, noret);
 
     std::cout << copat::PlatformThreadingFuncs::getCurrentThreadName() << " is the executor after awaitAllTasks" << std::endl;
-    co_await copat::SwitchJobThreadAwaiter<true>{};
+    co_await copat::SwitchJobThreadAwaiter<EJobThreadType::MainThread>{};
     std::cout << copat::PlatformThreadingFuncs::getCurrentThreadName() << " is it main thread after awaitAllTasks" << std::endl;
 }
 
 
-copat::JobSystemReturnableTask<u32, false, false> testRetCoro();
-copat::JobSystemReturnableTask<u32&, false, false> testRetCoroRef();
+copat::JobSystemReturnableTask<u32, false, EJobThreadType::WorkerThreads> testRetCoro();
+copat::JobSystemReturnableTask<u32&, false, EJobThreadType::WorkerThreads> testRetCoroRef();
 
 /**
  * This job awaits sub tasks at different stages and finally returns
@@ -161,6 +160,17 @@ copat::NormalFuncAwaiter testRetCoroCall()
         std::cout << "Value Returned val " << val << std::endl;
     }
 }
+```
+
+## User defined threads
+Along with default main and worker threads, User can add their own special threads by defining `USER_DEFINED_THREADS()` with list of comma separated special threads enum values terminated with comma as well. First user thread enum must have value `EJobThreadType::MainThread + 1` and Last user thread enum must have value `EJobThreadType::WorkerThreads - 1`. Every enum must be in sequential order.
+
+```cpp
+/**
+ * Thread types that are added by user
+ */
+//#define USER_DEFINED_THREADS() Thread1 = 1, Thread2, ... , ThreadN = WorkerThreads - 1
+#define USER_DEFINED_THREADS() RenderThread, AudioThread, PhysicsThread,
 ```
 
 ## References

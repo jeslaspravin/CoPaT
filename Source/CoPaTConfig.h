@@ -15,6 +15,12 @@
 #include <functional>
 
 /**
+ * Thread types that are added by user
+ */
+//#define USER_DEFINED_THREADS() Thread1 = 1, Thread2, ... , ThreadN = WorkerThreads - 1
+//#define USER_DEFINED_THREADS() RenderThread,
+
+/**
  * Define Cache line size override here
  */
 //#define OVERRIDE_CACHE_LINE_SIZE 64
@@ -64,6 +70,10 @@
 //////////////////////////////////////////////////////////////////////////
 /// Actual config
 //////////////////////////////////////////////////////////////////////////
+
+#ifndef USER_DEFINED_THREADS
+#define USER_DEFINED_THREADS()
+#endif
 
 #if (defined OVERRIDE_CACHE_LINE_SIZE & OVERRIDE_CACHE_LINE_SIZE != 0)
 #define CACHE_LINE_SIZE OVERRIDE_CACHE_LINE_SIZE

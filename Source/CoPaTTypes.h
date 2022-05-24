@@ -1,5 +1,5 @@
 /*!
- * \file CoPaTMemory.h
+ * \file CoPaTTypes.h
  *
  * \author Jeslas
  * \date May 2022
@@ -21,6 +21,18 @@
 COPAT_NS_INLINED
 namespace copat
 {
+
+/**
+ * MainThread must be 0 and any other threads must be sequential values from 1 to WorkerThreads - 1
+ */
+enum class EJobThreadType
+{
+    MainThread = 0,
+    // User added thread types start
+    USER_DEFINED_THREADS()
+    // User added thread types end
+    WorkerThreads
+};
 
 #ifndef OVERRIDE_MEMORY_ALLOCATOR
 struct DefaultCoPaTMemAlloc

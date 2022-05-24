@@ -46,6 +46,7 @@ public:
     {
         ownerCoroutine = other.ownerCoroutine;
         other.ownerCoroutine = nullptr;
+        return *this;
     }
 
     ~WaitOnAwaitable() noexcept

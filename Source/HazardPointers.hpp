@@ -12,7 +12,7 @@
 #pragma once
 
 #include "CoPaTConfig.h"
-#include "CoPaTMemory.h"
+#include "CoPaTTypes.h"
 #include "Platform/PlatformThreadingFunctions.h"
 #include "SyncPrimitives.h"
 
@@ -95,6 +95,7 @@ public:
         {
             record = other.record;
             other.record = nullptr;
+            return *this;
         }
 
         ~HazardPointer()

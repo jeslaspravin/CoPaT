@@ -33,6 +33,8 @@ void JobSystem::initialize(MainThreadTickFunc &&mainTick, void *inUserData)
     userData = inUserData;
     PlatformThreadingFuncs::setCurrentThreadName(COPAT_TCHAR("MainThread"));
 
+    specialThreadsPool.initialize(this);
+
     u32 maxWorkers = calculateWorkersCount();
     for (u32 i = 0; i < maxWorkers; ++i)
     {
@@ -41,6 +43,14 @@ void JobSystem::initialize(MainThreadTickFunc &&mainTick, void *inUserData)
         // Destroy when finishes
         worker.detach();
     }
+}
+
+void initializeAndRunSpecialThread_INTERNAL(SpecialThreadFuncType_INTERNAL threadFunc, EJobThreadType threadType, JobSystem *jobSystem) 
+{
+    std::thread specialThread{ [jobSystem, threadFunc]() { (jobSystem->*threadFunc)(); } };
+    PlatformThreadingFuncs::setThreadName((COPAT_TCHAR("SpecialThread_") + COPAT_TOSTRING(u32(threadType))).c_str(), specialThread.native_handle());
+    // Destroy when finishes
+    specialThread.detach();
 }
 
 } // namespace copat

@@ -259,7 +259,9 @@ public:
     {}
     template <typename AnyType>
     CoroutineReturnStorage &operator=(AnyType &&value)
-    {}
+    {
+        return *this;
+    }
 
     constexpr operator void() const noexcept {}
 

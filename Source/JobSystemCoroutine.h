@@ -13,7 +13,7 @@
 
 #include "SyncPrimitives.h"
 #include "CoroutineUtilities.h"
-#include "CoPaTMemory.h"
+#include "CoPaTTypes.h"
 
 #include <atomic>
 #include <concepts>
@@ -22,12 +22,12 @@ COPAT_NS_INLINED
 namespace copat
 {
 
-template <bool SwitchToMain>
+template <EJobThreadType SwitchToThread>
 struct SwitchJobThreadAwaiter
 {
     // Even if nothing is awaiting it is still better to suspend as something might await on it after it if finished
     constexpr bool await_ready() const { return false; }
-    void await_suspend(std::coroutine_handle<> h) const { JobSystem::get()->enqueueJob(h, SwitchToMain); }
+    void await_suspend(std::coroutine_handle<> h) const { JobSystem::get()->enqueueJob(h, SwitchToThread); }
     constexpr void await_resume() const noexcept {}
 };
 
@@ -196,7 +196,7 @@ public:
  * scheduled in appropriate thread at initial suspend InMainThread - Determines the thread in which initial_suspend queues this coroutine Task
  * that is not shareable ie) more than one copy cannot exist
  */
-template <typename RetType, typename BasePromiseType, bool EnqAtInitialSuspend, bool InMainThread>
+template <typename RetType, typename BasePromiseType, bool EnqAtInitialSuspend, EJobThreadType EnqueueInThread>
 class JobSystemTaskType
 {
 public:
@@ -221,6 +221,7 @@ public:
     {
         ownerCoroutine = other.ownerCoroutine;
         other.ownerCoroutine = nullptr;
+        return *this;
     }
 
     ~JobSystemTaskType() noexcept
@@ -248,7 +249,7 @@ public:
         {
             if constexpr (EnqAtInitialSuspend)
             {
-                JobSystem::get()->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), InMainThread);
+                JobSystem::get()->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread);
                 return std::suspend_always{};
             }
             else
@@ -277,8 +278,8 @@ public:
 /**
  * Specialization for void return type
  */
-template <typename BasePromiseType, bool EnqAtInitialSuspend, bool InMainThread>
-class JobSystemTaskType<void, BasePromiseType, EnqAtInitialSuspend, InMainThread>
+template <typename BasePromiseType, bool EnqAtInitialSuspend, EJobThreadType EnqueueInThread>
+class JobSystemTaskType<void, BasePromiseType, EnqAtInitialSuspend, EnqueueInThread>
 {
 public:
     class PromiseType;
@@ -300,6 +301,7 @@ public:
     {
         ownerCoroutine = other.ownerCoroutine;
         other.ownerCoroutine = nullptr;
+        return *this;
     }
 
     ~JobSystemTaskType() noexcept
@@ -324,7 +326,7 @@ public:
         {
             if constexpr (EnqAtInitialSuspend)
             {
-                JobSystem::get()->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), InMainThread);
+                JobSystem::get()->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread);
                 return std::suspend_always{};
             }
             else
@@ -352,7 +354,7 @@ public:
  * scheduled in appropriate thread at initial suspend InMainThread - Determines the thread in which initial_suspend queues this coroutine Task
  * that is shareable and the coroutine handle is reference counted to ensure it gets destroyed after all Task copies gets destroyed
  */
-template <typename RetType, typename BasePromiseType, bool EnqAtInitialSuspend, bool InMainThread>
+template <typename RetType, typename BasePromiseType, bool EnqAtInitialSuspend, EJobThreadType EnqueueInThread>
 class JobSystemShareableTaskType
 {
 public:
@@ -371,11 +373,19 @@ public:
     JobSystemShareableTaskType(JobSystemShareableTaskType &&other)
         : ownerCoroutinePtr(std::move(other.ownerCoroutinePtr))
     {}
-    JobSystemShareableTaskType &operator=(JobSystemShareableTaskType &&other) { ownerCoroutinePtr = std::move(other.ownerCoroutinePtr); }
+    JobSystemShareableTaskType &operator=(JobSystemShareableTaskType &&other)
+    {
+        ownerCoroutinePtr = std::move(other.ownerCoroutinePtr);
+        return *this;
+    }
     JobSystemShareableTaskType(const JobSystemShareableTaskType &other)
         : ownerCoroutinePtr(other.ownerCoroutinePtr)
     {}
-    JobSystemShareableTaskType &operator=(const JobSystemShareableTaskType &other) { ownerCoroutinePtr = other.ownerCoroutinePtr; }
+    JobSystemShareableTaskType &operator=(const JobSystemShareableTaskType &other)
+    {
+        ownerCoroutinePtr = other.ownerCoroutinePtr;
+        return *this;
+    }
 
     // Delete default initializations
     JobSystemShareableTaskType() = delete;
@@ -394,7 +404,7 @@ public:
         {
             if constexpr (EnqAtInitialSuspend)
             {
-                JobSystem::get()->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), InMainThread);
+                JobSystem::get()->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread);
                 return std::suspend_always{};
             }
             else
@@ -424,8 +434,8 @@ public:
 /**
  * Specialization for void return type
  */
-template <typename BasePromiseType, bool EnqAtInitialSuspend, bool InMainThread>
-class JobSystemShareableTaskType<void, BasePromiseType, EnqAtInitialSuspend, InMainThread>
+template <typename BasePromiseType, bool EnqAtInitialSuspend, bool EnqueueInThread>
+class JobSystemShareableTaskType<void, BasePromiseType, EnqAtInitialSuspend, EnqueueInThread>
 {
 public:
     class PromiseType;
@@ -441,11 +451,19 @@ public:
     JobSystemShareableTaskType(JobSystemShareableTaskType &&other)
         : ownerCoroutinePtr(std::move(other.ownerCoroutinePtr))
     {}
-    JobSystemShareableTaskType &operator=(JobSystemShareableTaskType &&other) { ownerCoroutinePtr = std::move(other.ownerCoroutinePtr); }
+    JobSystemShareableTaskType &operator=(JobSystemShareableTaskType &&other)
+    {
+        ownerCoroutinePtr = std::move(other.ownerCoroutinePtr);
+        return *this;
+    }
     JobSystemShareableTaskType(const JobSystemShareableTaskType &other)
         : ownerCoroutinePtr(other.ownerCoroutinePtr)
     {}
-    JobSystemShareableTaskType &operator=(const JobSystemShareableTaskType &other) { ownerCoroutinePtr = other.ownerCoroutinePtr; }
+    JobSystemShareableTaskType &operator=(const JobSystemShareableTaskType &other)
+    {
+        ownerCoroutinePtr = other.ownerCoroutinePtr;
+        return *this;
+    }
 
     // Delete default initializations
     JobSystemShareableTaskType() = delete;
@@ -461,7 +479,7 @@ public:
         {
             if constexpr (EnqAtInitialSuspend)
             {
-                JobSystem::get()->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), InMainThread);
+                JobSystem::get()->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread);
                 return std::suspend_always{};
             }
             else
@@ -489,34 +507,34 @@ public:
 /**
  * Single awaitable, Auto enqueue task with no return type
  */
-template <bool InMainThread>
-using JobSystemEnqTask = JobSystemTaskType<void, JobSystemPromiseBase, true, InMainThread>;
+template <EJobThreadType EnqueueInThread>
+using JobSystemEnqTask = JobSystemTaskType<void, JobSystemPromiseBase, true, EnqueueInThread>;
 /**
  * Multi awaitable, Auto enqueue task with no return type
  */
-template <bool InMainThread>
-using JobSystemEnqTaskMultiAwait = JobSystemTaskType<void, JobSystemPromiseBaseMC, true, InMainThread>;
+template <EJobThreadType EnqueueInThread>
+using JobSystemEnqTaskMultiAwait = JobSystemTaskType<void, JobSystemPromiseBaseMC, true, EnqueueInThread>;
 
 /**
  * Single awaitable, Manual await enqueue task with no return type
  */
-template <bool InMainThread>
-using JobSystemTask = JobSystemTaskType<void, JobSystemPromiseBase, false, InMainThread>;
+template <EJobThreadType EnqueueInThread>
+using JobSystemTask = JobSystemTaskType<void, JobSystemPromiseBase, false, EnqueueInThread>;
 /**
  * Multi awaitable, Manual await task with no return type
  */
-template <bool InMainThread>
-using JobSystemTaskMC = JobSystemTaskType<void, JobSystemPromiseBaseMC, false, InMainThread>;
+template <EJobThreadType EnqueueInThread>
+using JobSystemTaskMC = JobSystemTaskType<void, JobSystemPromiseBaseMC, false, EnqueueInThread>;
 
 /**
  * Single awaitable task with return type
  */
-template <typename RetType, bool EnqAtInitSuspend, bool InMainThread>
-using JobSystemReturnableTask = JobSystemTaskType<RetType, JobSystemPromiseBase, EnqAtInitSuspend, InMainThread>;
+template <typename RetType, bool EnqAtInitSuspend, EJobThreadType EnqueueInThread>
+using JobSystemReturnableTask = JobSystemTaskType<RetType, JobSystemPromiseBase, EnqAtInitSuspend, EnqueueInThread>;
 /**
  * Multi awaitable task with return type
  */
-template <typename RetType, bool EnqAtInitSuspend, bool InMainThread>
-using JobSystemReturnableTaskMC = JobSystemTaskType<RetType, JobSystemPromiseBaseMC, EnqAtInitSuspend, InMainThread>;
+template <typename RetType, bool EnqAtInitSuspend, EJobThreadType EnqueueInThread>
+using JobSystemReturnableTaskMC = JobSystemTaskType<RetType, JobSystemPromiseBaseMC, EnqAtInitSuspend, EnqueueInThread>;
 
 } // namespace copat

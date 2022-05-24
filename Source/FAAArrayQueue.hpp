@@ -37,7 +37,7 @@
 #define _FAA_ARRAY_QUEUE_HP_H_
 
 #include "HazardPointers.hpp"
-#include "CoPaTMemory.h"
+#include "CoPaTTypes.h"
 
 #include <atomic>
 

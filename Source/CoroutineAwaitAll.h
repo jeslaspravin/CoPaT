@@ -171,6 +171,7 @@ public:
     {
         allAwaits = std::move(other.allAwaits);
         counter = std::move(other.counter);
+        return *this;
     }
 
     ~AwaitAllTasks() { destroyAllAwaits(std::make_index_sequence<AWAITABLES_COUNT>{}); }
@@ -247,6 +248,7 @@ public:
     {
         allAwaits = std::move(other.allAwaits);
         counter = std::move(other.counter);
+        return *this;
     }
 
     ~AwaitAllTasks()
