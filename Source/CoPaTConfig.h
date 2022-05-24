@@ -25,6 +25,11 @@
 //#define OVERRIDE_MEMORY_ALLOCATOR AllocatorType
 
 /**
+ * Defines Export symbols macro in case using this inside shared library
+ */
+//#define OVERRIDE_EXPORT_SYM __declspec(dllexport)
+
+/**
  * Define if we do not want to have everything inside namespace
  */
 //#define WRAP_INSIDE_NS 0
@@ -64,6 +69,13 @@
 #define CACHE_LINE_SIZE OVERRIDE_CACHE_LINE_SIZE
 #else
 #define CACHE_LINE_SIZE 64
+#endif
+
+#ifdef OVERRIDE_EXPORT_SYM
+#define COPAT_EXPORT_SYM OVERRIDE_EXPORT_SYM
+#else
+// By default we use this library as static lib or embedded code
+#define COPAT_EXPORT_SYM
 #endif
 
 #ifndef WRAP_INSIDE_NS

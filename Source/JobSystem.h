@@ -23,7 +23,7 @@ COPAT_NS_INLINED
 namespace copat
 {
 
-class JobSystem
+class COPAT_EXPORT_SYM JobSystem
 {
 public:
     constexpr static const u32 MAX_SUPPORTED_WORKERS = 128;
@@ -37,6 +37,11 @@ public:
     {
         bool bIsMainThread;
         WorkerThreadQueueType::HazardToken enqDqToken;
+
+        PerThreadData(WorkerThreadQueueType::HazardToken&& hazardToken)
+            : bIsMainThread(false)
+            , enqDqToken(std::forward<WorkerThreadQueueType::HazardToken>(hazardToken))
+        {}
     };
 
 private:
@@ -111,10 +116,7 @@ private:
         PerThreadData *threadData = (PerThreadData *)PlatformThreadingFuncs::getTlsSlotValue(tlsSlot);
         if (!threadData)
         {
-            PlatformThreadingFuncs::setTlsSlotValue(
-                tlsSlot, new (CoPaTMemAlloc::memAlloc(sizeof(PerThreadData), alignof(PerThreadData)))
-                             PerThreadData{ .bIsMainThread = false, .enqDqToken{ std::move(workerJobs.getHazardToken()) } }
-            );
+            PlatformThreadingFuncs::setTlsSlotValue(tlsSlot, memNew<PerThreadData>(std::move(workerJobs.getHazardToken())));
             threadData = (PerThreadData *)PlatformThreadingFuncs::getTlsSlotValue(tlsSlot);
         }
         return threadData;

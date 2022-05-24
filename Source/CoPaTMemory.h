@@ -57,9 +57,17 @@ using CoPaTMemAlloc = DefaultCoPaTMemAlloc;
 #else
 using CoPaTMemAlloc = OVERRIDE_MEMORY_ALLOCATOR
 #endif
+
 /**
- * Helper to delete a ptr after invoking its destructor
+ * Helper to new and delete a ptr after invoking its destructor
  */
+
+template <typename T, typename... Args>
+T *memNew(Args &&...args)
+{
+    return new (CoPaTMemAlloc::memAlloc(sizeof(T), alignof(T))) T(std::forward<Args>(args)...);
+}
+
 template <typename T>
 requires(std::is_fundamental_v<T> || std::is_trivially_destructible_v<T>) void memDelete(T *ptr) { CoPaTMemAlloc::memFree(ptr); }
 template <typename T>

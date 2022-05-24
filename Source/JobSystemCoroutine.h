@@ -152,11 +152,10 @@ public:
          * We are just trying to append a continuation to current chainTailPtrCache's pNext and replace chainTailPtrCache with new
          * ContinuationEventChain in thread safe way
          */
-        ContinuationEventChain *nextEventChain
-            = new (CoPaTMemAlloc::memAlloc(sizeof(ContinuationEventChain), alignof(ContinuationEventChain))) ContinuationEventChain;
-        ContinuationEventChain *expectedValue = nullptr;
+        ContinuationEventChain *nextEventChain = memNew<ContinuationEventChain>();
         while (!bBlockContinuation.test(std::memory_order::acquire))
         {
+            ContinuationEventChain *expectedValue = nullptr;
             // CAS on same chainTailPtrCache as eventually it will be changed in one of the threads
             while (chainTailPtrCache
                    && chainTailPtrCache->pNext.compare_exchange_strong(expectedValue, nextEventChain, std::memory_order::acq_rel))

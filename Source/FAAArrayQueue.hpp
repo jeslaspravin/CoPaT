@@ -137,7 +137,7 @@ public:
 
     FAAArrayQueue()
     {
-        Node *sentinelNode = new (CoPaTMemAlloc::memAlloc(sizeof(Node), alignof(Node))) Node(nullptr);
+        Node *sentinelNode = memNew<Node, Node *>(nullptr);
         sentinelNode->enqidx.store(0, std::memory_order_relaxed);
         head.store(sentinelNode, std::memory_order_relaxed);
         tail.store(sentinelNode, std::memory_order_relaxed);
@@ -176,7 +176,8 @@ public:
                 {
                     // Try acquire existing deleting node if any present
                     Node *newNode = hazardsManager.dequeueDelete();
-                    newNode = newNode ? newNode : new (CoPaTMemAlloc::memAlloc(sizeof(Node), alignof(Node))) Node(item);
+                    newNode = newNode ? newNode : (Node *)(CoPaTMemAlloc::memAlloc(sizeof(Node), alignof(Node)));
+                    newNode = new (newNode) Node(item);
                     if (ltail->casNext(nullptr, newNode))
                     {
                         casTail(ltail, newNode);
@@ -292,7 +293,7 @@ private:
 public:
     FAAArrayMPSCQueue()
     {
-        Node *sentinelNode = new (CoPaTMemAlloc::memAlloc(sizeof(Node), alignof(Node))) Node(nullptr);
+        Node *sentinelNode = memNew<Node, Node *>(nullptr);
         sentinelNode->enqidx.store(0, std::memory_order_relaxed);
         head = sentinelNode;
         tail.store(sentinelNode, std::memory_order_relaxed);
@@ -322,7 +323,7 @@ public:
                 Node *lnext = ltail->next.load(std::memory_order::relaxed);
                 if (lnext == nullptr)
                 {
-                    Node *newNode = new (CoPaTMemAlloc::memAlloc(sizeof(Node), alignof(Node))) Node(item);
+                    Node *newNode = memNew<Node>(item);
                     if (ltail->casNext(nullptr, newNode))
                     {
                         casTail(ltail, newNode);

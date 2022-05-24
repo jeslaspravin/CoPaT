@@ -194,8 +194,7 @@ public:
 private:
     HazardPtrPerThreadData *createPerThreadData()
     {
-        HazardPtrPerThreadData *perThreadData
-            = new (CoPaTMemAlloc::memAlloc(sizeof(HazardPtrPerThreadData), alignof(HazardPtrPerThreadData))) HazardPtrPerThreadData();
+        HazardPtrPerThreadData *perThreadData = memNew<HazardPtrPerThreadData>();
         perThreadData->lastCollect = std::chrono::steady_clock::now();
 
         std::scoped_lock<SpinLock> allThreadDataLock{ perThreadDataLock };
@@ -215,8 +214,7 @@ private:
 
     HazardPointersChunk *addChunk(HazardPointersChunk *addTo)
     {
-        HazardPointersChunk *newChunk
-            = new (CoPaTMemAlloc::memAlloc(sizeof(HazardPointersChunk), alignof(HazardPointersChunk))) HazardPointersChunk();
+        HazardPointersChunk *newChunk = memNew<HazardPointersChunk>();
         HazardPointersChunk *expectedChunk = nullptr;
         if (addTo->pNext.compare_exchange_weak(expectedChunk, newChunk, std::memory_order::acq_rel, std::memory_order::relaxed))
         {

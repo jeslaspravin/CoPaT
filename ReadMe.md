@@ -32,6 +32,7 @@ Above code is all you need to run the job system. You can exit from `joinMain()`
 
 ## Future Goals
 Right now the library is just a bunch of headers and TU files
+- Replace enqueue task using singleton with function parameter based JobSystem instance injection
 - Convert to CMake library project
 - Add unit test and cover all feature's basic use cases
 - Integrate github's CI pipeline
@@ -45,7 +46,7 @@ Right now the library is just a bunch of headers and TU files
 Any C++ 20 standard compliant compiler must be able to compile and run this library successfully.
 
 ## Platform support
-Right now due to some platform specific codes. Supported platform is limited to **Windows**. However I have exposed `PlatformThreadingFuncs` type overrideable so that you can hook your application's platform specific code to be used in this library. You just have to add `OVERRIDE_PLATFORMTHREADINGFUNCTIONS` define to your platform functions class/wrapper in `CoPatConfig.h` and define few necessary functions(same as in `GenericThreadingFunctions`)
+Right now due to some platform specific codes, Supported platform is limited to **Windows**. However I have exposed `PlatformThreadingFuncs` type overrideable so that you can hook your application's platform specific code to be used in this library. You just have to add `OVERRIDE_PLATFORMTHREADINGFUNCTIONS` define to your platform functions class/wrapper in `CoPatConfig.h` and define few necessary functions(same as in `GenericThreadingFunctions`)
 ```cpp
 /**
  * Override PlatformThreadingFunctions.
