@@ -32,7 +32,6 @@ Above code is all you need to run the job system. You can exit from `joinMain()`
 
 ## Future Goals
 Right now the library is just a bunch of headers and TU files
-- Replace enqueue task using singleton with function parameter based JobSystem instance injection
 - Convert to CMake library project
 - Add unit test and cover all feature's basic use cases
 - Integrate github's CI pipeline
@@ -40,7 +39,7 @@ Right now the library is just a bunch of headers and TU files
 - Ofcourse bug fixes :wink:
 
 ## External libraries used
-- [ConcurrencyFreaks] - Using modified version of [FAAArrayQueue.hpp](https://github.com/pramalhe/ConcurrencyFreaks/blob/master/CPP/queues/array/FAAArrayQueue.hpp) for MPMC(Multi Producer Multi Consumer) and MPSC(MP Single Consumer) queues used for job system. The algorithms are modified to suit my needs and embedded into this libraries code. [License](https://github.com/pramalhe/ConcurrencyFreaks/blob/master/LICENSE)
+- [ConcurrencyFreaks] - Using modified version of [FAAArrayQueue.hpp](https://github.com/pramalhe/ConcurrencyFreaks/blob/master/CPP/queues/array/FAAArrayQueue.hpp) for MPMC(Multi Producer Multi Consumer) and MPSC(MP Single Consumer) queues used for job system. The algorithms are modified to suit my needs and embedded into this library's code. [License](https://github.com/pramalhe/ConcurrencyFreaks/blob/master/LICENSE)
 
 ## Compiler requirement
 Any C++ 20 standard compliant compiler must be able to compile and run this library successfully.
@@ -171,6 +170,26 @@ Along with default main and worker threads, User can add their own special threa
  */
 //#define USER_DEFINED_THREADS() Thread1 = 1, Thread2, ... , ThreadN = WorkerThreads - 1
 #define USER_DEFINED_THREADS() RenderThread, AudioThread, PhysicsThread,
+```
+
+## Enqueueing Coroutine Task to different Job system
+Now you can have any number of job instance and have tasks be enqueued to any of those job system.
+All you have to do is pass the JobSystem reference(`JobSystem &`) to the coroutine and call that coroutine with job system you want it to be enqueued to.
+
+> Note that `JobSystem::get()` still exists and Coroutine jobs that do not have `JobSystem &` as function's first parameter will use it to enqueue the job.
+The job system that gets initialized the very first time will be stored in JobSystem singleton. This decision is to allow a main job system(Will be stored in the singleton) and some sub job system that will be useable inside different subsystem.
+
+### Example
+```cpp
+copat::JobSystemEnqTask<copat::EJobThreadType::WorkerThreads> testThreadedTask(copat::JobSystem& jobSystem, u32 counter);
+
+copat::JobSystem jsA;
+copat::JobSystem jsB;
+
+// This task gets enqueued to jsA's EJobThreadType::WorkerThreads
+auto t1 = testThreadedTask(jsA, counter);
+// This task gets enqueued to jsB's EJobThreadType::WorkerThreads
+auto t2 = testThreadedTask(jsB, counter);
 ```
 
 ## References

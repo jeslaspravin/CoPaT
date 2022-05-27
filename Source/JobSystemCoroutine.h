@@ -25,9 +25,24 @@ namespace copat
 template <EJobThreadType SwitchToThread>
 struct SwitchJobThreadAwaiter
 {
+
+    JobSystem *enqToJobSystem = nullptr;
+
+public:
+    SwitchJobThreadAwaiter(JobSystem &jobSystem)
+        : enqToJobSystem(&jobSystem)
+    {}
+    SwitchJobThreadAwaiter()
+        : enqToJobSystem(JobSystem::get())
+    {}
+
     // Even if nothing is awaiting it is still better to suspend as something might await on it after it if finished
     constexpr bool await_ready() const { return false; }
-    void await_suspend(std::coroutine_handle<> h) const { JobSystem::get()->enqueueJob(h, SwitchToThread); }
+    void await_suspend(std::coroutine_handle<> h) const
+    {
+        COPAT_ASSERT(enqToJobSystem);
+        enqToJobSystem->enqueueJob(h, SwitchToThread);
+    }
     constexpr void await_resume() const noexcept {}
 };
 
@@ -242,14 +257,24 @@ public:
     {
     public:
         RetTypeStorage returnStore;
+        JobSystem *enqToJobSystem = nullptr;
 
     public:
+        template <typename... FunctionParams>
+        PromiseType(JobSystem &jobSystem, FunctionParams... params)
+            : enqToJobSystem(&jobSystem)
+        {}
+        PromiseType()
+            : enqToJobSystem(JobSystem::get())
+        {}
+
         JobSystemTaskType get_return_object() noexcept { return JobSystemTaskType{ std::coroutine_handle<PromiseType>::from_promise(*this) }; }
         auto initial_suspend() noexcept
         {
             if constexpr (EnqAtInitialSuspend)
             {
-                JobSystem::get()->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread);
+                COPAT_ASSERT(enqToJobSystem);
+                enqToJobSystem->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread);
                 return std::suspend_always{};
             }
             else
@@ -321,12 +346,24 @@ public:
     class PromiseType : public BasePromiseType
     {
     public:
+        JobSystem *enqToJobSystem = nullptr;
+
+    public:
+        template <typename... FunctionParams>
+        PromiseType(JobSystem &jobSystem, FunctionParams... params)
+            : enqToJobSystem(&jobSystem)
+        {}
+        PromiseType()
+            : enqToJobSystem(JobSystem::get())
+        {}
+
         JobSystemTaskType get_return_object() noexcept { return JobSystemTaskType{ std::coroutine_handle<PromiseType>::from_promise(*this) }; }
         auto initial_suspend() noexcept
         {
             if constexpr (EnqAtInitialSuspend)
             {
-                JobSystem::get()->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread);
+                COPAT_ASSERT(enqToJobSystem);
+                enqToJobSystem->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread);
                 return std::suspend_always{};
             }
             else
@@ -395,7 +432,17 @@ public:
     public:
         RetTypeStorage returnStore;
 
+        JobSystem *enqToJobSystem = nullptr;
+
     public:
+        template <typename... FunctionParams>
+        PromiseType(JobSystem &jobSystem, FunctionParams... params)
+            : enqToJobSystem(&jobSystem)
+        {}
+        PromiseType()
+            : enqToJobSystem(JobSystem::get())
+        {}
+
         JobSystemShareableTaskType get_return_object() noexcept
         {
             return JobSystemShareableTaskType{ std::coroutine_handle<PromiseType>::from_promise(*this) };
@@ -404,7 +451,8 @@ public:
         {
             if constexpr (EnqAtInitialSuspend)
             {
-                JobSystem::get()->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread);
+                COPAT_ASSERT(enqToJobSystem);
+                enqToJobSystem->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread);
                 return std::suspend_always{};
             }
             else
@@ -434,7 +482,7 @@ public:
 /**
  * Specialization for void return type
  */
-template <typename BasePromiseType, bool EnqAtInitialSuspend, bool EnqueueInThread>
+template <typename BasePromiseType, bool EnqAtInitialSuspend, EJobThreadType EnqueueInThread>
 class JobSystemShareableTaskType<void, BasePromiseType, EnqAtInitialSuspend, EnqueueInThread>
 {
 public:
@@ -471,6 +519,17 @@ public:
     class PromiseType : public BasePromiseType
     {
     public:
+        JobSystem *enqToJobSystem = nullptr;
+
+    public:
+        template <typename... FunctionParams>
+        PromiseType(JobSystem &jobSystem, FunctionParams... params)
+            : enqToJobSystem(&jobSystem)
+        {}
+        PromiseType()
+            : enqToJobSystem(JobSystem::get())
+        {}
+
         JobSystemShareableTaskType get_return_object() noexcept
         {
             return JobSystemShareableTaskType{ std::coroutine_handle<PromiseType>::from_promise(*this) };
@@ -479,7 +538,8 @@ public:
         {
             if constexpr (EnqAtInitialSuspend)
             {
-                JobSystem::get()->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread);
+                COPAT_ASSERT(enqToJobSystem);
+                enqToJobSystem->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread);
                 return std::suspend_always{};
             }
             else

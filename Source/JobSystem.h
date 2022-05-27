@@ -30,8 +30,8 @@ using WorkerThreadQueueType = FAAArrayQueue<void>;
 /**
  * Just to not leak thread include
  */
-using SpecialThreadFuncType_INTERNAL = void (JobSystem::*)();
-void initializeAndRunSpecialThread_INTERNAL(SpecialThreadFuncType_INTERNAL threadFunc, EJobThreadType threadType, JobSystem *jobSystem);
+using INTERNAL_SpecialThreadFuncType = void (JobSystem::*)();
+void INTERNAL_initializeAndRunSpecialThread(INTERNAL_SpecialThreadFuncType threadFunc, EJobThreadType threadType, JobSystem *jobSystem);
 
 struct alignas(2 * CACHE_LINE_SIZE) SpecialJobReceivedEvent
 {
@@ -68,7 +68,7 @@ public:
         COPAT_ASSERT(jobSystem);
         ownerJobSystem = jobSystem;
 
-        initialSpecialThreads(std::make_integer_sequence<u32, COUNT>{});
+        initializeSpecialThreads(std::make_integer_sequence<u32, COUNT>{});
     }
     void shutdown()
     {
@@ -96,9 +96,9 @@ private:
     static constexpr EJobThreadType idxToThreadType(u32 idx) { return EJobThreadType(idx + 1 + u32(EJobThreadType::MainThread)); }
 
     template <u32 LastIdx>
-    void initialSpecialThreads(std::integer_sequence<u32, LastIdx>);
+    void initializeSpecialThreads(std::integer_sequence<u32, LastIdx>);
     template <u32 FirstIdx, u32... Indices>
-    void initialSpecialThreads(std::integer_sequence<u32, FirstIdx, Indices...>);
+    void initializeSpecialThreads(std::integer_sequence<u32, FirstIdx, Indices...>);
 };
 
 /**
@@ -194,6 +194,8 @@ public:
     void enqueueJob(std::coroutine_handle<> coro, EJobThreadType enqueueToThread = EJobThreadType::WorkerThreads)
     {
         PerThreadData *threadData = getPerThreadData();
+        COPAT_ASSERT(threadData);
+
         if (enqueueToThread == EJobThreadType::MainThread)
         {
             mainThreadJobs.enqueue(coro.address());
@@ -214,8 +216,16 @@ public:
         }
     }
 
+    EJobThreadType getCurrentThreadType() const
+    {
+        PerThreadData *tlData = getPerThreadData();
+        COPAT_ASSERT(tlData);
+        return tlData->threadType;
+    }
+
 private:
-    PerThreadData *getPerThreadData()
+    PerThreadData *getPerThreadData() const { return (PerThreadData *)PlatformThreadingFuncs::getTlsSlotValue(tlsSlot); }
+    PerThreadData *getOrCreatePerThreadData()
     {
         PerThreadData *threadData = (PerThreadData *)PlatformThreadingFuncs::getTlsSlotValue(tlsSlot);
         if (!threadData)
@@ -235,7 +245,7 @@ private:
 
     void runMain()
     {
-        PerThreadData *tlData = getPerThreadData();
+        PerThreadData *tlData = getOrCreatePerThreadData();
         tlData->threadType = EJobThreadType::MainThread;
         while (true)
         {
@@ -259,7 +269,7 @@ private:
 
     void doWorkerJobs()
     {
-        PerThreadData *tlData = getPerThreadData();
+        PerThreadData *tlData = getOrCreatePerThreadData();
         tlData->threadType = EJobThreadType::WorkerThreads;
         while (true)
         {
@@ -287,47 +297,44 @@ private:
     template <u32 SpecialThreadIdx, EJobThreadType SpecialThreadType>
     void doSpecialThreadJobs()
     {
-        if constexpr (SpecialThreadsPoolType::COUNT != 0)
+        PerThreadData *tlData = getOrCreatePerThreadData();
+        tlData->threadType = SpecialThreadType;
+        while (true)
         {
-            PerThreadData *tlData = getPerThreadData();
-            tlData->threadType = SpecialThreadType;
-            while (true)
+            while (void *coroPtr = specialThreadsPool.getThreadJobsQueue(SpecialThreadIdx)->dequeue())
             {
-                while (void *coroPtr = specialThreadsPool.getThreadJobsQueue(SpecialThreadIdx)->dequeue())
-                {
-                    std::coroutine_handle<>::from_address(coroPtr).resume();
-                }
-
-                if (bExitMain.test(std::memory_order::relaxed))
-                {
-                    break;
-                }
-
-                specialThreadsPool.getJobEvent(SpecialThreadIdx)->wait();
+                std::coroutine_handle<>::from_address(coroPtr).resume();
             }
-            specialThreadsPool.onSpecialThreadExit();
-            memDelete(tlData);
+
+            if (bExitMain.test(std::memory_order::relaxed))
+            {
+                break;
+            }
+
+            specialThreadsPool.getJobEvent(SpecialThreadIdx)->wait();
         }
+        specialThreadsPool.onSpecialThreadExit();
+        memDelete(tlData);
     }
 };
 
 template <u32 SpecialThreadsCount>
 template <u32 LastIdx>
-void SpecialThreadsPool<SpecialThreadsCount>::initialSpecialThreads(std::integer_sequence<u32, LastIdx>)
+void SpecialThreadsPool<SpecialThreadsCount>::initializeSpecialThreads(std::integer_sequence<u32, LastIdx>)
 {
     constexpr static const EJobThreadType threadType = idxToThreadType(LastIdx);
-    SpecialThreadFuncType_INTERNAL func = &JobSystem::doSpecialThreadJobs<LastIdx, threadType>;
-    initializeAndRunSpecialThread_INTERNAL(func, idxToThreadType(LastIdx), ownerJobSystem);
+    INTERNAL_SpecialThreadFuncType func = &JobSystem::doSpecialThreadJobs<LastIdx, threadType>;
+    INTERNAL_initializeAndRunSpecialThread(func, threadType, ownerJobSystem);
 }
 
 template <u32 SpecialThreadsCount>
 template <u32 FirstIdx, u32... Indices>
-void SpecialThreadsPool<SpecialThreadsCount>::initialSpecialThreads(std::integer_sequence<u32, FirstIdx, Indices...>)
+void SpecialThreadsPool<SpecialThreadsCount>::initializeSpecialThreads(std::integer_sequence<u32, FirstIdx, Indices...>)
 {
     constexpr static const EJobThreadType threadType = idxToThreadType(FirstIdx);
-    SpecialThreadFuncType_INTERNAL func = &JobSystem::doSpecialThreadJobs<FirstIdx, threadType>;
-    initializeAndRunSpecialThread_INTERNAL(func, idxToThreadType(FirstIdx), ownerJobSystem);
-    initialSpecialThreads(std::index_sequence<Indices...>{});
+    INTERNAL_SpecialThreadFuncType func = &JobSystem::doSpecialThreadJobs<FirstIdx, threadType>;
+    INTERNAL_initializeAndRunSpecialThread(func, threadType, ownerJobSystem);
+    initializeSpecialThreads(std::integer_sequence<u32, Indices...>{});
 }
 
 } // namespace copat

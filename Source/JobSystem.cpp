@@ -45,7 +45,7 @@ void JobSystem::initialize(MainThreadTickFunc &&mainTick, void *inUserData)
     }
 }
 
-void initializeAndRunSpecialThread_INTERNAL(SpecialThreadFuncType_INTERNAL threadFunc, EJobThreadType threadType, JobSystem *jobSystem) 
+void INTERNAL_initializeAndRunSpecialThread(INTERNAL_SpecialThreadFuncType threadFunc, EJobThreadType threadType, JobSystem *jobSystem) 
 {
     std::thread specialThread{ [jobSystem, threadFunc]() { (jobSystem->*threadFunc)(); } };
     PlatformThreadingFuncs::setThreadName((COPAT_TCHAR("SpecialThread_") + COPAT_TOSTRING(u32(threadType))).c_str(), specialThread.native_handle());
