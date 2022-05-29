@@ -225,7 +225,7 @@ public:
 
 private:
     PerThreadData *getPerThreadData() const { return (PerThreadData *)PlatformThreadingFuncs::getTlsSlotValue(tlsSlot); }
-    PerThreadData *getOrCreatePerThreadData()
+    PerThreadData &getOrCreatePerThreadData()
     {
         PerThreadData *threadData = (PerThreadData *)PlatformThreadingFuncs::getTlsSlotValue(tlsSlot);
         if (!threadData)
@@ -233,7 +233,7 @@ private:
             PlatformThreadingFuncs::setTlsSlotValue(tlsSlot, memNew<PerThreadData>(std::move(workerJobs.getHazardToken())));
             threadData = (PerThreadData *)PlatformThreadingFuncs::getTlsSlotValue(tlsSlot);
         }
-        return threadData;
+        return *threadData;
     }
 
     u32 calculateWorkersCount() const
@@ -245,7 +245,7 @@ private:
 
     void runMain()
     {
-        PerThreadData *tlData = getOrCreatePerThreadData();
+        PerThreadData *tlData = &getOrCreatePerThreadData();
         tlData->threadType = EJobThreadType::MainThread;
         while (true)
         {
@@ -269,7 +269,7 @@ private:
 
     void doWorkerJobs()
     {
-        PerThreadData *tlData = getOrCreatePerThreadData();
+        PerThreadData *tlData = &getOrCreatePerThreadData();
         tlData->threadType = EJobThreadType::WorkerThreads;
         while (true)
         {

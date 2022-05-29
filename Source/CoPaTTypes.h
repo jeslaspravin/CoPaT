@@ -67,7 +67,7 @@ public:
 };
 using CoPaTMemAlloc = DefaultCoPaTMemAlloc;
 #else
-using CoPaTMemAlloc = OVERRIDE_MEMORY_ALLOCATOR
+using CoPaTMemAlloc = OVERRIDE_MEMORY_ALLOCATOR;
 #endif
 
 /**

@@ -122,6 +122,10 @@
 #define COPAT_TOSTRING(x) std::to_string(x)
 #endif
 
+COPAT_NS_INLINED
+namespace copat
+{
+
 #ifdef OVERRIDE_UINT32
 using u32 = OVERRIDE_UINT32;
 #else
@@ -141,3 +145,5 @@ using FunctionType = OVERRIDE_FUNCTION_TYPE<RetType, Args...>;
 template <typename RetType, typename... Args>
 using FunctionType = std::function<RetType(Args...)>;
 #endif
+
+} // namespace copat

@@ -29,9 +29,6 @@ void JobSystem::initialize(MainThreadTickFunc &&mainTick, void *inUserData)
     {
         return;
     }
-    mainThreadTick = std::forward<MainThreadTickFunc>(mainTick);
-    userData = inUserData;
-    PlatformThreadingFuncs::setCurrentThreadName(COPAT_TCHAR("MainThread"));
 
     specialThreadsPool.initialize(this);
 
@@ -43,6 +40,13 @@ void JobSystem::initialize(MainThreadTickFunc &&mainTick, void *inUserData)
         // Destroy when finishes
         worker.detach();
     }
+
+    // Setup main thread
+    mainThreadTick = std::forward<MainThreadTickFunc>(mainTick);
+    userData = inUserData;
+    PlatformThreadingFuncs::setCurrentThreadName(COPAT_TCHAR("MainThread"));
+    PerThreadData &mainThreadData = getOrCreatePerThreadData();
+    mainThreadData.threadType = EJobThreadType::MainThread;
 }
 
 void INTERNAL_initializeAndRunSpecialThread(INTERNAL_SpecialThreadFuncType threadFunc, EJobThreadType threadType, JobSystem *jobSystem) 
