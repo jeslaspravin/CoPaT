@@ -16,7 +16,7 @@
 #include "Platform/PlatformThreadingFunctions.h"
 #include "SyncPrimitives.h"
 
-#include <atomic>
+#include <mutex>
 #include <chrono>
 #include <vector>
 

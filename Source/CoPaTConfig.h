@@ -36,6 +36,11 @@
 //#define OVERRIDE_EXPORT_SYM __declspec(dllexport)
 
 /**
+ * If you want to use your custom spin lock(Note that it must have proper class and function signature like in SpinLock in SyncPrimitives.h
+ */
+// #define OVERRIDE_SPINLOCK CustomSpinLock
+
+/**
  * Define if we do not want to have everything inside namespace
  */
 //#define WRAP_INSIDE_NS 0

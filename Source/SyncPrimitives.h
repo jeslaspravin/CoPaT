@@ -13,7 +13,9 @@
 
 #include "CoPaTConfig.h"
 
-#include <mutex>
+#ifndef OVERRIDE_SPINLOCK
+#include <atomic>
+#endif
 
 COPAT_NS_INLINED
 namespace copat
@@ -89,6 +91,7 @@ public:
 
 #endif
 
+#ifndef OVERRIDE_SPINLOCK
 class SpinLock
 {
 private:
@@ -103,5 +106,8 @@ public:
     bool try_lock() noexcept { return !flag.test(std::memory_order::acquire); }
     void unlock() noexcept { flag.clear(std::memory_order::release); }
 };
+#else // OVERRIDE_SPINLOCK
+using SpinLock = OVERRIDE_SPINLOCK;
+#endif // OVERRIDE_SPINLOCK
 
 } // namespace copat

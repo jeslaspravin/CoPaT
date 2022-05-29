@@ -1,6 +1,6 @@
 #pragma once
 
-#include "CoPaTConfig.h"
+#include "../CoPaTConfig.h"
 
 #include <string>
 
