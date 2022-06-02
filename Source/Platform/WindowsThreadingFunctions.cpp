@@ -39,13 +39,15 @@ void copat::WindowsThreadingFunctions::setCurrentThreadName(const char *name) { 
 
 std::string copat::WindowsThreadingFunctions::getCurrentThreadName()
 {
+    std::string outStr;
     HANDLE threadHnd = ::GetCurrentThread();
     wchar_t *threadName;
-    ::GetThreadDescription(threadHnd, &threadName);
-
-    std::string outStr;
-    u32 bufLen = ::WideCharToMultiByte(CP_UTF8, 0, threadName, -1, NULL, 0, NULL, NULL);
-    outStr.resize(bufLen);
-    bufLen = ::WideCharToMultiByte(CP_UTF8, 0, threadName, -1, outStr.data(), bufLen, NULL, NULL);
+    if (SUCCEEDED(::GetThreadDescription(threadHnd, &threadName)))
+    {
+        u32 bufLen = ::WideCharToMultiByte(CP_UTF8, 0, threadName, -1, NULL, 0, NULL, NULL);
+        outStr.resize(bufLen);
+        bufLen = ::WideCharToMultiByte(CP_UTF8, 0, threadName, -1, outStr.data(), bufLen, NULL, NULL);
+        ::LocalFree(threadName);
+    }
     return outStr;
 }
