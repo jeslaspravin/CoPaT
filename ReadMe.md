@@ -161,6 +161,21 @@ copat::NormalFuncAwaiter testRetCoroCall()
 }
 ```
 
+## Dispatching parallel tasks to workers
+`dispatch()` function can be used to dispatch a job on `n` number of data.
+
+### Example
+```cpp
+copat::NormalFuncAwaiter testDispatch()
+{
+    copat::u32 tasksCount = 100;
+    co_await copat::dispatch(js, [](copat::u32 jobIdx)
+        {
+            std::cout << "Dispatched job idx " + std::to_string(jobIdx) + "\n";
+        }, tasksCount);
+}
+```
+
 ## User defined threads
 Along with default main and worker threads, User can add their own special threads by defining `USER_DEFINED_THREADS()` with list of comma separated special threads enum values terminated with comma as well. First user thread enum must have value `EJobThreadType::MainThread + 1` and Last user thread enum must have value `EJobThreadType::WorkerThreads - 1`. Every enum must be in sequential order.
 
