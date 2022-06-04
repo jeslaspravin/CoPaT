@@ -191,7 +191,7 @@ Along with default main and worker threads, User can add their own special threa
 Now you can have any number of job instance and have tasks be enqueued to any of those job system.
 All you have to do is pass the JobSystem reference(`JobSystem &`) to the coroutine and call that coroutine with job system you want it to be enqueued to.
 
-> Note that `JobSystem::get()` still exists and Coroutine jobs that do not have `JobSystem &` as function's first parameter will use it to enqueue the job.
+> Note that `JobSystem::get()` still exists and Coroutine jobs that do not have `JobSystem & or JobSystem *` as function's first parameter will use it to enqueue the job.
 The job system that gets initialized the very first time will be stored in JobSystem singleton. This decision is to allow a main job system(Will be stored in the singleton) and some sub job system that will be useable inside different subsystem.
 
 ### Example
