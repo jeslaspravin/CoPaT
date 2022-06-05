@@ -1,5 +1,5 @@
 # **Co**operative **Pa**rallel **T**asking *(or)* **CoPaT**
-This is an experimental cooperative multi tasking library. I used coroutines to achieve cooperative multi task.
+This is a C++ 20 cooperative multi tasking library. I used coroutines to achieve cooperative multi task.
 I developed this for and also using this as task system in [Cranberry game engine].
 I decided to make this library available publically under MIT license. I will try and merge any improvements or changes I implement when using this in my game engine.
 
