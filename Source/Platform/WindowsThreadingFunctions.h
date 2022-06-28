@@ -21,6 +21,10 @@ public:
     static void setCurrentThreadName(const char *name);
 
     static std::string getCurrentThreadName();
+
+    static void getCoreCount(u32 &outCoreCount, u32 &outLogicalProcessorCount);
+    static bool setThreadProcessor(u32 coreIdx, u32 logicalProcessorIdx, void *threadHandle);
+    static bool setCurrentThreadProcessor(u32 coreIdx, u32 logicalProcessorIdx);
 };
 
 } // namespace copat

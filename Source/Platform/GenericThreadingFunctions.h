@@ -8,7 +8,7 @@ COPAT_NS_INLINED
 namespace copat
 {
 
-class GenericThreadingFunctions
+class COPAT_EXPORT_SYM GenericThreadingFunctions
 {
 protected:
     GenericThreadingFunctions() = default;
@@ -24,6 +24,10 @@ public:
     static void setCurrentThreadName(const char *name) {}
 
     static std::string getCurrentThreadName() { return {}; }
+
+    static void getCoreCount(u32 &outCoreCount, u32 &outLogicalProcessorCount) { outCoreCount = outLogicalProcessorCount = 0; };
+    static bool setThreadProcessor(u32 coreIdx, u32 logicalProcessorIdx, void *threadHandle) { return false; }
+    bool setCurrentThreadProcessor(u32 coreIdx, u32 logicalProcessorIdx) { return false; }
 };
 
 } // namespace copat
