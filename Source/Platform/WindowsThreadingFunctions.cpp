@@ -112,9 +112,7 @@ bool WindowsThreadingFunctions::setThreadProcessor(u32 coreIdx, u32 logicalProce
     grpAffinity.Group = WORD(groupIndex);
     grpAffinity.Mask = groupAffinityMask;
 
-    ::GROUP_AFFINITY outgrpAffinity = {};
-
-    return !!::SetThreadGroupAffinity((HANDLE)threadHandle, &grpAffinity, &outgrpAffinity);
+    return !!::SetThreadGroupAffinity((HANDLE)threadHandle, &grpAffinity, nullptr);
 #else
     // 32bit systems has some problem with GetLogicalProcessorInformationEx
     return false;
