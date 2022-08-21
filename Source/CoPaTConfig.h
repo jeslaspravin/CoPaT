@@ -66,6 +66,9 @@
  */
 //#define OVERRIDE_PLATFORMTHREADINGFUNCTIONS YourPlatformFunctions
 
+// If enable FAAArrayQueue node allocations tracking
+//#define COPAT_ENABLE_QUEUE_ALLOC_TRACKING 1
+
 /**
  * Override uint32_t and uint64_t?
  */
@@ -121,6 +124,16 @@
 #else
 #define COPAT_TOSTRING(x) std::to_string(x)
 #endif
+
+#ifndef COPAT_ENABLE_QUEUE_ALLOC_TRACKING
+
+#ifdef _DEBUG
+#define COPAT_ENABLE_QUEUE_ALLOC_TRACKING 1
+#else
+#define COPAT_ENABLE_QUEUE_ALLOC_TRACKING 0
+#endif
+
+#endif // #ifndef COPAT_ENABLE_QUEUE_ALLOC_TRACKING
 
 COPAT_NS_INLINED
 namespace copat

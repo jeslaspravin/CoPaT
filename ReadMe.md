@@ -36,6 +36,7 @@ Right now the library is just a bunch of headers and TU files
 - Add unit test and cover all feature's basic use cases
 - Integrate github's CI pipeline
 - Other platforms support in library
+- Check if reusing nodes is worth it in FAAArrayQueues
 - Ofcourse bug fixes :wink:
 
 ## External libraries used
