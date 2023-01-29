@@ -62,6 +62,13 @@
 //#define OVERRIDE_TOSTRING(expr) std::to_wstring(expr)
 
 /**
+ * Override for profiler char
+ * Override for profiler scope macro. Name will be static char
+ */
+// #define OVERRIDE_PROFILER_CHAR(expr)
+// #define OVERRIDE_PROFILER_SCOPE(Name)
+
+/**
  * Override PlatformThreadingFunctions.
  */
 //#define OVERRIDE_PLATFORMTHREADINGFUNCTIONS YourPlatformFunctions
@@ -123,6 +130,18 @@
 #define COPAT_TOSTRING(x) OVERRIDE_TOSTRING(x)
 #else
 #define COPAT_TOSTRING(x) std::to_string(x)
+#endif
+
+#ifdef OVERRIDE_PROFILER_SCOPE
+#define COPAT_PROFILER_SCOPE(Name) OVERRIDE_PROFILER_SCOPE(Name)
+#else
+#define COPAT_PROFILER_SCOPE(Name)
+#endif
+
+#ifdef OVERRIDE_PROFILER_CHAR
+#define COPAT_PROFILER_CHAR(x) OVERRIDE_PROFILER_CHAR(x)
+#else
+#define COPAT_PROFILER_CHAR(x) COPAT_TCHAR(x)
 #endif
 
 #ifndef COPAT_ENABLE_QUEUE_ALLOC_TRACKING
