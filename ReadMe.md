@@ -208,6 +208,25 @@ auto t1 = testThreadedTask(jsA, counter);
 auto t2 = testThreadedTask(jsB, counter);
 ```
 
+## Controlling threading using ThreadConstraints
+JobSystem's threading model can be controlled coarsely using `EThreadingConstraint` enum and passing it in constructor of the JobSystem `JobSystem(u32 constraints)`
+
+> `EThreadingConstraint::SingleThreaded` will make the entire job system to run in single thread. User should take extra precaution to avoid dead locks when using `copat::waitOnAwaitable(Awaitable)`
+
+`EThreadingConstraint` enum acts as both value and flag. Any enum entry after `EThreadingConstraint::BitMasksStart` will be used to create flag bit for that entry. 
+
+*Let us assume we have two special threads Render, Audio. If you want to combine render thread into main thread but still keep audio thread as a separate thread.
+The user should pass following as constraints to JobSystem's constructor*
+
+```cpp
+JobSystem js(EThreadingConstraint::NoConstraint | (EThreadingConstraint::BitMasksStart << (EThreadingConstraint::NoRender - EThreadingConstraint::BitMasksStart)));
+```
+or simply
+
+```cpp
+JobSystem js(EThreadingConstraint::BitMasksStart << (EThreadingConstraint::NoRender - EThreadingConstraint::BitMasksStart));
+```
+
 ## References
 - [cppcoro] - Wonderful library containing several useful codes for references
 - [1024cores.net] - Explains the lock-free programming very well also covers how false sharing(cache line collisions) between thread impacts performance.
