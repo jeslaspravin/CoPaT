@@ -82,8 +82,13 @@ copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ true, /*EnqueueInThread*/ 
 copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ true, /*EnqueueInThread*/ EJobThreadType::MainThread> mainThreadJob();
 ```
 
+> *Note that calling this coroutines will always enqueue to back of jobs queue even if the current thread is same as coroutine's enqueue thread! This could be used to defer some job in the same thread.*
+
 ## Switching job thread
 You can switch between threads in the middle of job manually using `template <EJobThreadType SwitchToThread> struct SwitchJobThreadAwaiter`
+
+> *Note that using `SwitchJobThreadAwaiter` will enqueue to back of jobs queue even if the current thread is same as switching to thread! This could be used to defer some job in the same thread.*
+
 ```cpp
 // copat::JobSystemEnqTask<EJobThreadType::WorkerThreads> is just specialization of copat::JobSystemTaskType with boolean to decide which thread to enqueue this task
 copat::JobSystemEnqTask<EJobThreadType::WorkerThreads> testManualSwitch(u32 counter)
