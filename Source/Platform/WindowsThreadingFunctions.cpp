@@ -16,20 +16,20 @@
 COPAT_NS_INLINED
 namespace copat
 {
-bool WindowsThreadingFunctions::createTlsSlot(u32 &outSlot)
+bool WindowsThreadingFunctions::createTlsSlot(u32 &outSlot) noexcept
 {
     u32 slotIdx = ::TlsAlloc();
     outSlot = slotIdx;
     return (slotIdx != TLS_OUT_OF_INDEXES);
 }
 
-void WindowsThreadingFunctions::releaseTlsSlot(u32 slot) { ::TlsFree(slot); }
+void WindowsThreadingFunctions::releaseTlsSlot(u32 slot) noexcept { ::TlsFree(slot); }
 
-bool WindowsThreadingFunctions::setTlsSlotValue(u32 slot, void *value) { return !!::TlsSetValue(slot, value); }
+bool WindowsThreadingFunctions::setTlsSlotValue(u32 slot, void *value) noexcept { return !!::TlsSetValue(slot, value); }
 
-void *WindowsThreadingFunctions::getTlsSlotValue(u32 slot) { return ::TlsGetValue(slot); }
+void *WindowsThreadingFunctions::getTlsSlotValue(u32 slot) noexcept { return ::TlsGetValue(slot); }
 
-void WindowsThreadingFunctions::setThreadName(const char *name, void *threadHandle)
+void WindowsThreadingFunctions::setThreadName(const char *name, void *threadHandle) noexcept
 {
     std::wstring outStr;
     u32 bufLen = ::MultiByteToWideChar(CP_UTF8, 0, name, -1, NULL, 0);
@@ -38,9 +38,9 @@ void WindowsThreadingFunctions::setThreadName(const char *name, void *threadHand
     ::SetThreadDescription(threadHandle, outStr.c_str());
 }
 
-void WindowsThreadingFunctions::setCurrentThreadName(const char *name) { setThreadName(name, ::GetCurrentThread()); }
+void WindowsThreadingFunctions::setCurrentThreadName(const char *name) noexcept { setThreadName(name, ::GetCurrentThread()); }
 
-std::string WindowsThreadingFunctions::getCurrentThreadName()
+std::string WindowsThreadingFunctions::getCurrentThreadName() noexcept
 {
     std::string outStr;
     HANDLE threadHnd = ::GetCurrentThread();
@@ -56,7 +56,7 @@ std::string WindowsThreadingFunctions::getCurrentThreadName()
 }
 
 template <typename T>
-void logicalProcessorInfoVisitor(T &&func, std::vector<uint8_t> &buffer, LOGICAL_PROCESSOR_RELATIONSHIP processorRelation)
+void logicalProcessorInfoVisitor(T &&func, std::vector<uint8_t> &buffer, LOGICAL_PROCESSOR_RELATIONSHIP processorRelation) noexcept
 {
     DWORD processorsInfoLen = 0;
     if (!::GetLogicalProcessorInformationEx(processorRelation, nullptr, &processorsInfoLen) && ::GetLastError() == ERROR_INSUFFICIENT_BUFFER)
@@ -78,7 +78,7 @@ void logicalProcessorInfoVisitor(T &&func, std::vector<uint8_t> &buffer, LOGICAL
     }
 }
 
-void WindowsThreadingFunctions::getCoreCount(u32 &outCoreCount, u32 &outLogicalProcessorCount)
+void WindowsThreadingFunctions::getCoreCount(u32 &outCoreCount, u32 &outLogicalProcessorCount) noexcept
 {
     outCoreCount = 0;
     outLogicalProcessorCount = 0;
@@ -96,7 +96,7 @@ void WindowsThreadingFunctions::getCoreCount(u32 &outCoreCount, u32 &outLogicalP
     );
 }
 
-bool WindowsThreadingFunctions::setThreadProcessor(u32 coreIdx, u32 logicalProcessorIdx, void *threadHandle)
+bool WindowsThreadingFunctions::setThreadProcessor(u32 coreIdx, u32 logicalProcessorIdx, void *threadHandle) noexcept
 {
 #if _WIN64
     u32 coreCount, logicalProcCount;
@@ -119,7 +119,7 @@ bool WindowsThreadingFunctions::setThreadProcessor(u32 coreIdx, u32 logicalProce
 #endif
 }
 
-bool WindowsThreadingFunctions::setCurrentThreadProcessor(u32 coreIdx, u32 logicalProcessorIdx)
+bool WindowsThreadingFunctions::setCurrentThreadProcessor(u32 coreIdx, u32 logicalProcessorIdx) noexcept
 {
     return setThreadProcessor(coreIdx, logicalProcessorIdx, ::GetCurrentThread());
 }

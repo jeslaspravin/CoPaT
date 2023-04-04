@@ -9,22 +9,22 @@ namespace copat
 class COPAT_EXPORT_SYM WindowsThreadingFunctions : public GenericThreadingFunctions
 {
 public:
-    static bool createTlsSlot(u32 &outSlot);
+    static bool createTlsSlot(u32 &outSlot) noexcept;
 
-    static void releaseTlsSlot(u32 slot);
+    static void releaseTlsSlot(u32 slot) noexcept;
 
-    static bool setTlsSlotValue(u32 slot, void *value);
+    static bool setTlsSlotValue(u32 slot, void *value) noexcept;
 
-    static void *getTlsSlotValue(u32 slot);
+    static void *getTlsSlotValue(u32 slot) noexcept;
 
-    static void setThreadName(const char *name, void *threadHandle);
-    static void setCurrentThreadName(const char *name);
+    static void setThreadName(const char *name, void *threadHandle) noexcept;
+    static void setCurrentThreadName(const char *name) noexcept;
 
-    static std::string getCurrentThreadName();
+    static std::string getCurrentThreadName() noexcept;
 
-    static void getCoreCount(u32 &outCoreCount, u32 &outLogicalProcessorCount);
-    static bool setThreadProcessor(u32 coreIdx, u32 logicalProcessorIdx, void *threadHandle);
-    static bool setCurrentThreadProcessor(u32 coreIdx, u32 logicalProcessorIdx);
+    static void getCoreCount(u32 &outCoreCount, u32 &outLogicalProcessorCount) noexcept;
+    static bool setThreadProcessor(u32 coreIdx, u32 logicalProcessorIdx, void *threadHandle) noexcept;
+    static bool setCurrentThreadProcessor(u32 coreIdx, u32 logicalProcessorIdx) noexcept;
 };
 
 } // namespace copat
