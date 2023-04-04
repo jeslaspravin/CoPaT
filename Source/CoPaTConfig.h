@@ -13,6 +13,7 @@
 
 #include <stdint.h>
 #include <functional>
+#include <string>
 
 /**
  * Thread types that are added by user
@@ -66,10 +67,12 @@
 // #define OVERRIDE_FUNCTION_TYPE std::function
 
 /**
+ * Override char type?
  * Override char specifier macro and to string macro.
  */
-//#define OVERRIDE_TCHAR(expr) L##expr
-//#define OVERRIDE_TOSTRING(expr) std::to_wstring(expr)
+// #define OVERRIDE_TCHAR_TYPE wchar_t
+// #define OVERRIDE_TCHAR(expr) L##expr
+// #define OVERRIDE_TOSTRING(expr) std::to_wstring(expr)
 
 /**
  * Override for profiler char
@@ -178,6 +181,12 @@ using u32 = uint32_t;
 using u64 = OVERRIDE_UINT64;
 #else
 using u64 = uint64_t;
+#endif
+
+#ifdef OVERRIDE_TCHAR_TYPE
+using TChar = OVERRIDE_TCHAR_TYPE;
+#else
+using TChar = std::remove_cv_t<std::remove_pointer_t<decltype(COPAT_TOSTRING(0).c_str())>>;
 #endif
 
 #ifdef OVERRIDE_FUNCTION_TYPE
