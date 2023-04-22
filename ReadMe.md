@@ -60,7 +60,7 @@ I have run a few test cases in `x64` arch. However It should be fine in `x86` as
 
 # Usage
 ```cpp
-template <typename RetType, typename BasePromiseType, bool EnqAtInitialSuspend, EJobThreadType EnqueueInThread>
+template <typename RetType, typename BasePromiseType, bool EnqAtInitialSuspend, EJobThreadType EnqueueInThread, EJobPriority Priority>
 class JobSystemTaskType;
 ```
 Above *Awaitable* type is the main coroutine return type for this job system.
@@ -75,11 +75,11 @@ Above *Awaitable* type is the main coroutine return type for this job system.
 ### Example
 ```cpp
 // Do not queues the task to job system automatically
-copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ false, /*EnqueueInThread*/ EJobThreadType::WorkerThreads> noEnqJob();
+copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ false, /*EnqueueInThread*/ EJobThreadType::WorkerThreads, /*Priority*/ Priority_Normal> noEnqJob();
 // Enqueues to worker thread automatically
-copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ true, /*EnqueueInThread*/ EJobThreadType::WorkerThreads> workerJob();
+copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ true, /*EnqueueInThread*/ EJobThreadType::WorkerThreads, /*Priority*/ Priority_Critical> workerJob();
 // Enqueues to main thread automatically
-copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ true, /*EnqueueInThread*/ EJobThreadType::MainThread> mainThreadJob();
+copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ true, /*EnqueueInThread*/ EJobThreadType::MainThread, /*Priority*/ Priority_Low> mainThreadJob();
 ```
 
 > *Note that calling this coroutines will always enqueue to back of jobs queue even if the current thread is same as coroutine's enqueue thread! This could be used to defer some job in the same thread.*
@@ -90,8 +90,8 @@ You can switch between threads in the middle of job manually using `template <EJ
 > *Note that using `SwitchJobThreadAwaiter` will enqueue to back of jobs queue even if the current thread is same as switching to thread! This could be used to defer some job in the same thread.*
 
 ```cpp
-// copat::JobSystemEnqTask<EJobThreadType::WorkerThreads> is just specialization of copat::JobSystemTaskType with boolean to decide which thread to enqueue this task
-copat::JobSystemEnqTask<EJobThreadType::WorkerThreads> testManualSwitch(u32 counter)
+// copat::JobSystemEnqTask<EJobThreadType::WorkerThreads, Priority_Normal> is just specialization of copat::JobSystemTaskType with boolean to decide which thread to enqueue this task
+copat::JobSystemEnqTask<EJobThreadType::WorkerThreads, Priority_Normal> testManualSwitch(u32 counter)
 {
     std::cout << copat::PlatformThreadingFuncs::getCurrentThreadName() << " is the executor, Counter : " << counter << std::endl;
     // Switching to main thread
@@ -104,8 +104,8 @@ copat::JobSystemEnqTask<EJobThreadType::WorkerThreads> testManualSwitch(u32 coun
 You can lock wait on a single job/awaitable using `copat::waitOnAwaitable(awaitable)`. Be aware that if you wait on a job that is already queued in same thread it will lead to dead-lock.
 The thread that calls this will wait until the job is finished.
 ```cpp
-copat::JobSystemReturnableTask<u32&, true, EJobThreadType::WorkerThreads> testCoroWait();
-copat::JobSystemEnqTask<EJobThreadType::WorkerThreads> testCoroWaitNoRet();
+copat::JobSystemReturnableTask<u32&, true, EJobThreadType::WorkerThreads, Priority_Normal> testCoroWait();
+copat::JobSystemEnqTask<EJobThreadType::WorkerThreads, Priority_Normal> testCoroWaitNoRet();
 
 auto retJob = testCoroWait();
 auto noretJob = testCoroWaitNoRet();
@@ -124,8 +124,8 @@ Once first job is finished second job resumes in same thread of awaited job
 
 ### Example
 ```cpp
-copat::JobSystemReturnableTask<u32&, true, EJobThreadType::WorkerThreads> testCoroWait();
-copat::JobSystemEnqTask<EJobThreadType::WorkerThreads> testCoroWaitNoRet();
+copat::JobSystemReturnableTask<u32&, true, EJobThreadType::WorkerThreads, Priority_Normal> testCoroWait();
+copat::JobSystemEnqTask<EJobThreadType::WorkerThreads, Priority_Normal> testCoroWaitNoRet();
 
 /**
  * This job awaits until all the sub tasks this starts and then switches to main thread and executes few lines of code
@@ -142,8 +142,8 @@ copat::NormalFuncAwaiter testawaitAll()
 }
 
 
-copat::JobSystemReturnableTask<u32, false, EJobThreadType::WorkerThreads> testRetCoro();
-copat::JobSystemReturnableTask<u32&, false, EJobThreadType::WorkerThreads> testRetCoroRef();
+copat::JobSystemReturnableTask<u32, false, EJobThreadType::WorkerThreads, Priority_Normal> testRetCoro();
+copat::JobSystemReturnableTask<u32&, false, EJobThreadType::WorkerThreads, Priority_Normal> testRetCoroRef();
 
 /**
  * This job awaits sub tasks at different stages and finally returns
@@ -202,7 +202,9 @@ The job system that gets initialized the very first time will be stored in JobSy
 
 ### Example
 ```cpp
-copat::JobSystemEnqTask<copat::EJobThreadType::WorkerThreads> testThreadedTask(copat::JobSystem& jobSystem, u32 counter);
+copat::copat::JobSystemWorkerThreadTask testThreadedTask(copat::JobSystem& jobSystem, u32 counter);
+
+testThreadedTask(copat::JobSystem& jobSystem, u32 counter);
 
 copat::JobSystem jsA;
 copat::JobSystem jsB;
@@ -211,6 +213,27 @@ copat::JobSystem jsB;
 auto t1 = testThreadedTask(jsA, counter);
 // This task gets enqueued to jsB's EJobThreadType::WorkerThreads
 auto t2 = testThreadedTask(jsB, counter);
+```
+
+## Overriding JobPriority specified at coroutine return type
+CoPaT supports priority queues now. It is very basic now however it is still useful.
+
+Just like enqueuing jobs to different job systems, any coroutine's priority can be overriden by passing the priority as `1st` or `2nd parameter` of the coroutine.
+Following coroutine signatures can be used to override priorities at runtime.
+```cpp
+copat::JobSystemWorkerThreadTask testThreadedTask(copat::JobSystem& jobSystem, EJobPriority jobPriority, u32 counter);
+copat::JobSystemWorkerThreadTask testThreadedTask(EJobPriority jobPriority, u32 counter);
+
+copat::JobSystem jsA;
+copat::JobSystem jsB;
+
+// This task gets enqueued to jsA's EJobThreadType::WorkerThreads with Normal priority
+auto t1 = testThreadedTask(jsA, copat::Priority_Normal, counter);
+// This task gets enqueued to jsB's EJobThreadType::WorkerThreads with critical priority
+auto t2 = testThreadedTask(jsB, copat::Priority_Critical, counter);
+// This task gets enqueued to default JobSystem's EJobThreadType::WorkerThreads with critical priority
+auto t3 = testThreadedTask(copat::Priority_Critical, counter);
+
 ```
 
 ## Controlling threading using ThreadConstraints
@@ -227,9 +250,12 @@ The user should pass following as constraints to JobSystem's constructor*
 JobSystem js(EThreadingConstraint::NoConstraint | (EThreadingConstraint::BitMasksStart << (EThreadingConstraint::NoRender - EThreadingConstraint::BitMasksStart)));
 ```
 or simply
-
 ```cpp
 JobSystem js(EThreadingConstraint::BitMasksStart << (EThreadingConstraint::NoRender - EThreadingConstraint::BitMasksStart));
+```
+or use macro
+```cpp
+JobSystem js(NOSPECIALTHREAD_ENUM_TO_FLAGBIT(Render));
 ```
 
 ## References
