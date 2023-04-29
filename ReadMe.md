@@ -182,6 +182,17 @@ copat::NormalFuncAwaiter testDispatch()
 }
 ```
 
+`diverge()` and `converge()` functions can be used to dispatch a returnable job on `n` number of data. The `converge` collects all the returned values and returns it.
+### Example
+```cpp
+    auto allAwaits = copat::diverge(
+        copat::JobSystem::get(), copat::DispatchFunctionTypeWithRet<RetType>::createLambda(loadAssetsAsync),
+        foundAssets.size()
+    );
+    std::vector<AssetBase *> loadedAssetsPerFile = copat::converge(std::move(allAwaits));
+    
+```
+
 ## User defined threads
 Along with default main and worker threads, User can add their own special threads by defining `USER_DEFINED_THREADS()` with list of comma separated special threads enum values terminated with comma as well. First user thread enum must have value `EJobThreadType::MainThread + 1` and Last user thread enum must have value `EJobThreadType::WorkerThreads - 1`. Every enum must be in sequential order.
 
