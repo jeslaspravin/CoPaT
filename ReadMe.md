@@ -1,9 +1,9 @@
 # **Co**operative **Pa**rallel **T**asking *(or)* **CoPaT**
-This is a C++ 20 cooperative multi tasking library. I used coroutines to achieve cooperative multi task.
-I developed this for and also using this as task system in [Cranberry game engine].
-I decided to make this library available publically under MIT license. I will try and merge any improvements or changes I implement when using this in my game engine.
+This is a C++ 20 cooperative multi-tasking library. I used coroutines to achieve cooperative multi-task.
+I developed this for and also use this as a task system in [Cranberry game engine].
+I decided to make this library available publically under an MIT license. I will try and merge any improvements or changes I implement when using this in my game engine.
 
-Best way to use this library is just copy the files in *Source* directory and paste it in your code base. Then all you have to do is
+The best way to use this library is to copy the files in the *Source* directory and paste them into your code base. Then all you have to do is
 ```cpp
 void mainTick(void* userData);
 
@@ -16,10 +16,12 @@ int main()
      */
     js.initialize(&mainTick, nullptr);
     /**
-     * Just like thread join. This join blocks and starts main thread loop. Main thread loop executes the mainTick and pumps the posted main 
-     * thread jobs.
-     * If your application just needs workers and will not queue any jobs to main queue, You can safely ignore joinMain(). Note that if you
-     * ignore joinMain() mainTick never gets called.
+     * Just like thread join. 
+     * This join blocks and starts main thread loop. 
+     * Main thread loop executes the mainTick and pumps the posted main thread jobs.
+     * 
+     * If your application just needs workers and will not queue any jobs to main queue, You can safely ignore joinMain().
+     * Note that if you ignore joinMain() mainTick never gets called and main thread's queue will never get executed.
      */
     js.joinMain();
     /**
@@ -28,25 +30,25 @@ int main()
     js.shutdown();
 }
 ```
-Above code is all you need to run the job system. You can exit from `joinMain()` by calling `JobSystem::exitMain()`.
+The above code is all you need to run the job system. You can exit from `joinMain()` by calling `JobSystem::exitMain()`.
 
 ## Future Goals
 Right now the library is just a bunch of headers and TU files
 - Convert to CMake library project
 - Add unit test and cover all feature's basic use cases
 - Integrate github's CI pipeline
-- Other platforms support in library
+- Other platforms support in the library
 - Check if reusing nodes is worth it in FAAArrayQueues
-- Ofcourse bug fixes :wink:
+- Of course bug fixes :wink:
 
 ## External libraries used
 - [ConcurrencyFreaks] - Using modified version of [FAAArrayQueue.hpp](https://github.com/pramalhe/ConcurrencyFreaks/blob/master/CPP/queues/array/FAAArrayQueue.hpp) for MPMC(Multi Producer Multi Consumer) and MPSC(MP Single Consumer) queues used for job system. The algorithms are modified to suit my needs and embedded into this library's code. [License](https://github.com/pramalhe/ConcurrencyFreaks/blob/master/LICENSE)
 
 ## Compiler requirement
-Any C++ 20 standard compliant compiler must be able to compile and run this library successfully.
+Any C++ 20 standard-compliant compiler must be able to compile and run this library successfully.
 
 ## Platform support
-Right now due to some platform specific codes, Supported platform is limited to **Windows**. However I have exposed `PlatformThreadingFuncs` type overrideable so that you can hook your application's platform specific code to be used in this library. You just have to add `OVERRIDE_PLATFORMTHREADINGFUNCTIONS` define to your platform functions class/wrapper in `CoPatConfig.h` and define few necessary functions(same as in `GenericThreadingFunctions`)
+Due to some platform-specific codes, the Supported platform is limited to **Windows**. However, I have exposed the `PlatformThreadingFuncs` type overrideable so that you can hook your application's platform-specific code to be used in this library. You have to add `OVERRIDE_PLATFORMTHREADINGFUNCTIONS` define to your platform functions class/wrapper in `CoPatConfig.h` and define a few necessary functions(same as in `GenericThreadingFunctions`)
 ```cpp
 /**
  * Override PlatformThreadingFunctions.
@@ -55,22 +57,23 @@ Right now due to some platform specific codes, Supported platform is limited to 
 ```
 
 ## Platform architecture support
-I have run a few test cases in `x64` arch. However It should be fine in `x86` as well. I am not sure about `arm`
-(I do not have much knowledge in that architecture)
+I have run a few test cases in the `x64` arch. However, It should be fine in `x86` as well. I am not sure about the `arm`
+(I do not have much knowledge of that architecture)
 
 # Usage
 ```cpp
 template <typename RetType, typename BasePromiseType, bool EnqAtInitialSuspend, EJobThreadType EnqueueInThread, EJobPriority Priority>
 class JobSystemTaskType;
 ```
-Above *Awaitable* type is the main coroutine return type for this job system.
+The above *Awaitable* type is the main coroutine return type for this job system.
 
 - `RetType` - What type will `co_await` on this object will return to awaiter
-- `BasePromiseType` - can take `JobSystemPromiseBase` or `JobSystemPromiseBaseMC`. Once this coroutine job reaches `final_suspend` all the awaiters awaiting on this job will be resumed.
-    * `JobSystemPromiseBase` for jobs which can be awaited in only one other coroutine
+- `BasePromiseType` - can take `JobSystemPromiseBase` or `JobSystemPromiseBaseMC`. Once this coroutine job reaches `final_suspend` all the awaiters awaiting this job will be resumed.
+    * `JobSystemPromiseBase` for jobs that can be awaited in only one other coroutine
     * `JobSystemPromiseBaseMC` for jobs which can be awaited by more than one coroutines
-- `EnqAtInitialSuspend` - As the name suggests. Jobs with this `true` will be enqueued to job system automatically at `initial_suspend`, The thread to which it will be enqueued depends on next enum `EnqueueInThread`. while `false` means this job will start executing in current thread synchronously until it is manually switched in the middle.
-- `EnqueueInThread` - This value must be a valid enum of thread type to which this just must be queued to.
+- `EnqAtInitialSuspend` - As the name suggests. Jobs with this `true` will be enqueued to the job system automatically at `initial_suspend`, The thread to which it will be enqueued depends on the next enum `EnqueueInThread`. while `false` means this job will start executing in the current thread synchronously until it is manually switched in the middle.
+- `EnqueueInThread` - This value must be a valid enum of thread type to which the job must queue.
+- `Priority` - Specifies the priority of the job. Possible values are `Critical`, `Normal`, and `Low`
 
 ### Example
 ```cpp
@@ -82,12 +85,12 @@ copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ true, /*EnqueueInThread*/ 
 copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ true, /*EnqueueInThread*/ EJobThreadType::MainThread, /*Priority*/ Priority_Low> mainThreadJob();
 ```
 
-> *Note that calling this coroutines will always enqueue to back of jobs queue even if the current thread is same as coroutine's enqueue thread! This could be used to defer some job in the same thread.*
+> *Note that calling this coroutine will always enqueue to the back of the queue even if the current thread is the same as the coroutine's enqueue thread! This could be used to defer some jobs in the same thread.*
 
 ## Switching job thread
 You can switch between threads in the middle of job manually using `template <EJobThreadType SwitchToThread> struct SwitchJobThreadAwaiter`
 
-> *Note that using `SwitchJobThreadAwaiter` will enqueue to back of jobs queue even if the current thread is same as switching to thread! This could be used to defer some job in the same thread.*
+> *Note that using `SwitchJobThreadAwaiter` will enqueue to the back of the queue even if the current thread is the same as switching to the thread! This could be used to defer some jobs in the same thread.*
 
 ```cpp
 // copat::JobSystemEnqTask<EJobThreadType::WorkerThreads, Priority_Normal> is just specialization of copat::JobSystemTaskType with boolean to decide which thread to enqueue this task
@@ -100,8 +103,10 @@ copat::JobSystemEnqTask<EJobThreadType::WorkerThreads, Priority_Normal> testManu
 }
 ```
 
+If you want to delay the execution of a job within the same thread but you are not aware of the currently running thread, you can use YieldAwaiter to defer this job and allow other jobs to run.
+
 ## Thread wait on a job
-You can lock wait on a single job/awaitable using `copat::waitOnAwaitable(awaitable)`. Be aware that if you wait on a job that is already queued in same thread it will lead to dead-lock.
+You can lock wait on a single job/awaitable using `copat::waitOnAwaitable(awaitable)`. Be aware that if you wait on a job that is already queued in the same thread it will lead to dead-lock.
 The thread that calls this will wait until the job is finished.
 ```cpp
 copat::JobSystemReturnableTask<u32&, true, EJobThreadType::WorkerThreads, Priority_Normal> testCoroWait();
@@ -116,11 +121,11 @@ copat::waitOnAwaitable(noretJob);
 ```
 
 ## Job wait until all awaitables
-This is non locking alternative for `copat::waitOnAwaitable(awaitable)`. So what this basically does is just suspend the waiting job and waits until awaiting job is done. This can be done in two ways
+This is a non-locking alternative for `copat::waitOnAwaitable(awaitable)`. So what this basically does is just suspend the waiting job and waits until awaiting job is done. This can be done in two ways
 
-- Job to Job await - Awaitable returned from a job can be `co_await`ed on another job. This suspends second job until first job is completed.
-Once first job is finished second job resumes in same thread of awaited job
-- Multiple job to job await - Awaitable returned from several jobs can be piped through `copat::awaitAllTasks(...)` to create new awaitable which then can be awaited in another job to wait until all the jobs that it awaits on is finished.
+- Job to Job await - Awaitable returned from a job can be `co_await`ed on another job. This suspends the second job until the first job is completed.
+Once the first job is finished the second job resumes in the same thread as awaited job
+- Multiple jobs to job await - Awaitable returned from several jobs can be piped through `copat::awaitAllTasks(...)` to create new awaitable which then can be awaited in another job to wait until all the jobs that it awaits on are finished.
 
 ### Example
 ```cpp
@@ -168,7 +173,7 @@ copat::NormalFuncAwaiter testRetCoroCall()
 ```
 
 ## Dispatching parallel tasks to workers
-`dispatch()` function can be used to dispatch a job on `n` number of data.
+The `dispatch()` function can be used to dispatch a job on an `n` number of data.
 
 ### Example
 ```cpp
@@ -182,34 +187,60 @@ copat::NormalFuncAwaiter testDispatch()
 }
 ```
 
-`diverge()` and `converge()` functions can be used to dispatch a returnable job on `n` number of data. The `converge` collects all the returned values and returns it.
+`diverge()` and `converge()` functions can be used to dispatch a returnable job on an `n` number of data. The `converge` collects all the returned values and returns them.
 ### Example
 ```cpp
+    auto loadAssetsAsync = [](u32 idx) -> AssetBase *
+    {
+        // Do task
+    };
     auto allAwaits = copat::diverge(
-        copat::JobSystem::get(), copat::DispatchFunctionTypeWithRet<RetType>::createLambda(loadAssetsAsync),
+        copat::JobSystem::get(), 
+        loadAssetsAsync,
         foundAssets.size()
     );
     std::vector<AssetBase *> loadedAssetsPerFile = copat::converge(std::move(allAwaits));
-    
+```
+If you are going to use `dispatch()` or `diverge()` followed by a `waitOnAwaitable()` or `converge()`, Then it is best to use `parallelFor()` or `parallelForReturn()` respectively.
+### Example
+```cpp
+    auto loadAssetsAsync = [](u32 idx) -> AssetBase *
+    {
+        // Do task
+    };
+    std::vector<AssetBase *> loadedAssetsPerFile = copat::parallelForReturn(
+        copat::JobSystem::get(), 
+        loadAssetsAsync,
+        foundAssets.size()
+    );
 ```
 
 ## User defined threads
-Along with default main and worker threads, User can add their own special threads by defining `USER_DEFINED_THREADS()` with list of comma separated special threads enum values terminated with comma as well. First user thread enum must have value `EJobThreadType::MainThread + 1` and Last user thread enum must have value `EJobThreadType::WorkerThreads - 1`. Every enum must be in sequential order.
+Along with default main and worker threads, User can also add their own special threads by defining `FOR_EACH_UDTHREAD_TYPES_UNIQUE_FIRST_LAST(FirstMacroName, MacroName, LastMacroName)` with a list of special thread names enclosed inside `FirstMacroName()`, `MacroName()` and `LastMacroName()` depending on the position of the special thread in the list.
 
 ```cpp
 /**
  * Thread types that are added by user
  */
-//#define USER_DEFINED_THREADS() Thread1 = 1, Thread2, ... , ThreadN = WorkerThreads - 1
-#define USER_DEFINED_THREADS() RenderThread, AudioThread, PhysicsThread,
+// #define FOR_EACH_THREAD_TYPES_UNIQUE_FIRST_LAST(FirstMacroName, MacroName, LastMacroName)    \
+//      FirstMacroName(Thread1)                                                                 \
+//      MacroName(Thread2)                                                                      \
+//      ...                                                                                     \
+//      LastMacroName(ThreadN) 
+// 
+// #define FOR_EACH_THREAD_TYPES_UNIQUE_FIRST_LAST(FirstMacroName, MacroName, LastMacroName) FirstMacroName(RenderThread)
+#define FOR_EACH_UDTHREAD_TYPES_UNIQUE_FIRST_LAST(FirstMacroName, MacroName, LastMacroName)     \
+    FirstMacroName(RenderThread)                                                                \
+    MacroName(PhysicsThread)                                                                    \
+    LastMacroName(AudioThread)
 ```
 
 ## Enqueueing Coroutine Task to different Job system
-Now you can have any number of job instance and have tasks be enqueued to any of those job system.
-All you have to do is pass the JobSystem reference(`JobSystem &`) to the coroutine and call that coroutine with job system you want it to be enqueued to.
+Now you can have any number of job instances and have tasks be enqueued to any of those job systems.
+All you have to do is pass the JobSystem reference(`JobSystem &`) to the coroutine and call that coroutine with the job system you want it to be enqueued to.
 
-> Note that `JobSystem::get()` still exists and Coroutine jobs that do not have `JobSystem & or JobSystem *` as function's first parameter will use it to enqueue the job.
-The job system that gets initialized the very first time will be stored in JobSystem singleton. This decision is to allow a main job system(Will be stored in the singleton) and some sub job system that will be useable inside different subsystem.
+> Note that `JobSystem::get()` still exists and Coroutine jobs that do not have `JobSystem & or JobSystem *` as the function's first parameter will use it to enqueue the job.
+The job system that gets initialized the very first time will be stored in JobSystem singleton. This decision is to allow a main job system(Which will be stored in the singleton) and some sub-job systems that will be used inside different subsystems.
 
 ### Example
 ```cpp
@@ -227,9 +258,9 @@ auto t2 = testThreadedTask(jsB, counter);
 ```
 
 ## Overriding JobPriority specified at coroutine return type
-CoPaT supports priority queues now. It is very basic now however it is still useful.
+CoPaT supports priority queues now. It is a simple implementation now, however, it is still useful.
 
-Just like enqueuing jobs to different job systems, any coroutine's priority can be overriden by passing the priority as `1st` or `2nd parameter` of the coroutine.
+Similar to enqueuing jobs to different job systems, any coroutine's priority can be overridden by passing the priority as the `1st` or `2nd parameter` of the coroutine.
 Following coroutine signatures can be used to override priorities at runtime.
 ```cpp
 copat::JobSystemWorkerThreadTask testThreadedTask(copat::JobSystem& jobSystem, EJobPriority jobPriority, u32 counter);
@@ -248,14 +279,14 @@ auto t3 = testThreadedTask(copat::Priority_Critical, counter);
 ```
 
 ## Controlling threading using ThreadConstraints
-JobSystem's threading model can be controlled coarsely using `EThreadingConstraint` enum and passing it in constructor of the JobSystem `JobSystem(u32 constraints)`
+JobSystem's threading model can be controlled coarsely using the `EThreadingConstraint` enum and passing it in the constructor of the JobSystem `JobSystem(u32 constraints)`
 
-> `EThreadingConstraint::SingleThreaded` will make the entire job system to run in single thread. User should take extra precaution to avoid dead locks when using `copat::waitOnAwaitable(Awaitable)`
+> `EThreadingConstraint::SingleThreaded` will make the entire job system run in a single thread. Users should take extra precautions to avoid deadlocks when using `copat::waitOnAwaitable(Awaitable)`
 
-`EThreadingConstraint` enum acts as both value and flag. Any enum entry after `EThreadingConstraint::BitMasksStart` will be used to create flag bit for that entry. 
+`EThreadingConstraint` enum acts as both value and flag. Any enum entry after `EThreadingConstraint::BitMasksStart` will be used to create a flag bit for that entry. 
 
-*Let us assume we have two special threads Render, Audio. If you want to combine render thread into main thread but still keep audio thread as a separate thread.
-The user should pass following as constraints to JobSystem's constructor*
+*Let us assume we have two special threads Render and Audio. If you want to combine the render thread into the main thread but still keep the audio thread as a separate thread.
+The user should pass the following as constraints to JobSystem's constructor*
 
 ```cpp
 JobSystem js(EThreadingConstraint::NoConstraint | (EThreadingConstraint::BitMasksStart << (EThreadingConstraint::NoRender - EThreadingConstraint::BitMasksStart)));
