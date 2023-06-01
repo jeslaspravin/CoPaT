@@ -22,8 +22,8 @@
 //      FirstMacroName(Thread1)                                                                 \
 //      MacroName(Thread2)                                                                      \
 //      ...                                                                                     \
-//      LastMacroName(ThreadN) 
-// 
+//      LastMacroName(ThreadN)
+//
 // #define FOR_EACH_THREAD_TYPES_UNIQUE_FIRST_LAST(FirstMacroName, MacroName, LastMacroName) FirstMacroName(RenderThread)
 #define FOR_EACH_UDTHREAD_TYPES_UNIQUE_FIRST_LAST(FirstMacroName, MacroName, LastMacroName)
 #define FOR_EACH_UDTHREAD_TYPES(MacroName) FOR_EACH_UDTHREAD_TYPES_UNIQUE_FIRST_LAST(MacroName, MacroName, MacroName)
@@ -34,17 +34,17 @@
 /**
  * Define Cache line size override here
  */
-//#define OVERRIDE_CACHE_LINE_SIZE 64
+// #define OVERRIDE_CACHE_LINE_SIZE 64
 
 /**
  * Override memory allocator type
  */
-//#define OVERRIDE_MEMORY_ALLOCATOR AllocatorType
+// #define OVERRIDE_MEMORY_ALLOCATOR AllocatorType
 
 /**
  * Defines Export symbols macro in case using this inside shared library
  */
-//#define OVERRIDE_EXPORT_SYM __declspec(dllexport)
+// #define OVERRIDE_EXPORT_SYM __declspec(dllexport)
 
 /**
  * If you want to use your custom spin lock(Note that it must have proper class and function signature like in SpinLock in SyncPrimitives.h
@@ -54,12 +54,12 @@
 /**
  * Define if we do not want to have everything inside namespace
  */
-//#define WRAP_INSIDE_NS 0
+// #define WRAP_INSIDE_NS 0
 
 /**
  * Override for assert macro.
  */
-//#define OVERRIDE_ASSERT(expr) assert((expr))
+// #define OVERRIDE_ASSERT(expr) assert((expr))
 
 /**
  * Override promise::unhandled_exception() handler
@@ -89,16 +89,16 @@
 /**
  * Override PlatformThreadingFunctions.
  */
-//#define OVERRIDE_PLATFORMTHREADINGFUNCTIONS YourPlatformFunctions
+// #define OVERRIDE_PLATFORMTHREADINGFUNCTIONS YourPlatformFunctions
 
 // If enable FAAArrayQueue node allocations tracking
-//#define COPAT_ENABLE_QUEUE_ALLOC_TRACKING 1
+// #define COPAT_ENABLE_QUEUE_ALLOC_TRACKING 1
 
 /**
  * Override uint32_t and uint64_t?
  */
-//#define OVERRIDE_UINT32 uint32
-//#define OVERRIDE_UINT64 uint64
+// #define OVERRIDE_UINT32 uint32
+// #define OVERRIDE_UINT64 uint64
 
 //////////////////////////////////////////////////////////////////////////
 /// Actual config
@@ -141,7 +141,7 @@
 #ifdef OVERRIDE_UNHANDLED_EXCEPT_HANDLER
 #define COPAT_UNHANDLED_EXCEPT() OVERRIDE_UNHANDLED_EXCEPT_HANDLER()
 #else
-#define COPAT_UNHANDLED_EXCEPT() COPAT_ASSERT(!COPAT_TCHAR("CoPaT unhandled exception: ") COPAT_TCHAR(__func__))
+#define COPAT_UNHANDLED_EXCEPT() COPAT_ASSERT(!COPAT_TCHAR("CoPaT unhandled exception: "))
 #endif
 
 #ifdef OVERRIDE_TCHAR
