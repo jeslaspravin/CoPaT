@@ -283,7 +283,7 @@ JobSystem's threading model can be controlled coarsely using the `EThreadingCons
 
 > `EThreadingConstraint::SingleThreaded` will make the entire job system run in a single thread. Users should take extra precautions to avoid deadlocks when using `copat::waitOnAwaitable(Awaitable)`
 
-`EThreadingConstraint` enum acts as both value and flag. Any enum entry after `EThreadingConstraint::BitMasksStart` will be used to create a flag bit for that entry. 
+`EThreadingConstraint` enum acts as both value and flag. Any enum entry after `EThreadingConstraint::BitMasksStart` will be used to create a flag bit for that entry. Example `EThreadingConstraint::NoWorkerAffinity` entry must be used as a bit flag, The bit for this flag can be obtained using `THREADCONSTRAINT_ENUM_TO_FLAGBIT(NoWorkerAffinity)` macro.
 
 *Let us assume we have two special threads Render and Audio. If you want to combine the render thread into the main thread but still keep the audio thread as a separate thread.
 The user should pass the following as constraints to JobSystem's constructor*
