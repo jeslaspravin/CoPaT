@@ -108,11 +108,7 @@ bool WindowsThreadingFunctions::setThreadProcessor(u32 coreIdx, u32 logicalProce
     const u32 groupIndex = coreAffinityShift / 64;
     const u64 groupAffinityMask = 1ull << (coreAffinityShift % 64);
 
-    ::GROUP_AFFINITY grpAffinity = {};
-    grpAffinity.Group = WORD(groupIndex);
-    grpAffinity.Mask = groupAffinityMask;
-
-    return !!::SetThreadGroupAffinity((HANDLE)threadHandle, &grpAffinity, nullptr);
+    return setThreadGroupAffinity(groupIndex, groupAffinityMask, threadHandle);
 #else
     // 32bit systems has some problem with GetLogicalProcessorInformationEx
     return false;
@@ -122,6 +118,20 @@ bool WindowsThreadingFunctions::setThreadProcessor(u32 coreIdx, u32 logicalProce
 bool WindowsThreadingFunctions::setCurrentThreadProcessor(u32 coreIdx, u32 logicalProcessorIdx) noexcept
 {
     return setThreadProcessor(coreIdx, logicalProcessorIdx, ::GetCurrentThread());
+}
+
+bool WindowsThreadingFunctions::setThreadGroupAffinity(u32 grpIdx, u64 affinityMask, void *threadHandle) noexcept
+{
+#if _WIN64
+    ::GROUP_AFFINITY grpAffinity = {};
+    grpAffinity.Group = WORD(grpIdx);
+    grpAffinity.Mask = affinityMask;
+    return !!::SetThreadGroupAffinity((HANDLE)threadHandle, &grpAffinity, nullptr);
+
+#else
+    // 32bit systems do not have processor groups
+    return false
+#endif
 }
 
 } // namespace copat

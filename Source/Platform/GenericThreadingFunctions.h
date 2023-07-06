@@ -14,6 +14,52 @@ protected:
     GenericThreadingFunctions() = default;
 
 public:
+    struct GroupAffinityMaskBuilder
+    {
+    public:
+        GroupAffinityMaskBuilder();
+
+        GroupAffinityMaskBuilder &setGroupFrom(u32 coreIdx)
+        {
+            u32 logicProcGlobalIdx = coreIdx * logicProcsPerCore;
+            groupIdx = logicProcGlobalIdx / LOGIC_PROCS_PER_GROUP;
+            return *this;
+        }
+        GroupAffinityMaskBuilder &setAll()
+        {
+            mask = ~(0ull);
+            return *this;
+        }
+        GroupAffinityMaskBuilder &clearUpto(u32 coreIdx, u32 logicalProcessorIdx)
+        {
+            u32 logicProcGlobalIdx = coreIdx * logicProcsPerCore + logicalProcessorIdx;
+            if (isLogicProcGlobalIdxInsideGrp(logicProcGlobalIdx))
+            {
+                u32 bitIdx = logicProcGlobalIdx % LOGIC_PROCS_PER_GROUP;
+                u64 bitsToClear = (1ull << bitIdx) - 1;
+                mask &= ~bitsToClear;
+            }
+            return *this;
+        }
+
+        u32 getGroupIdx() const { return groupIdx; }
+        u64 getAffinityMask() const { return mask; }
+
+    private:
+        u64 mask;
+        u32 groupIdx;
+        u32 coreNum;
+        u32 logicProcsPerCore;
+
+        constexpr static const u32 LOGIC_PROCS_PER_GROUP = 64;
+        bool isLogicProcGlobalIdxInsideGrp(u32 logicProcGlobalIdx) const
+        {
+            return logicProcGlobalIdx >= (groupIdx * LOGIC_PROCS_PER_GROUP)
+                   && logicProcGlobalIdx < (groupIdx * LOGIC_PROCS_PER_GROUP + LOGIC_PROCS_PER_GROUP);
+        }
+    };
+
+public:
     static bool createTlsSlot(u32 &outSlot) noexcept { return false; }
     static void releaseTlsSlot(u32 slot) noexcept {}
     static bool setTlsSlotValue(u32 slot, void *value) noexcept { return false; }
@@ -28,6 +74,7 @@ public:
     static void getCoreCount(u32 &outCoreCount, u32 &outLogicalProcessorCount) noexcept { outCoreCount = outLogicalProcessorCount = 0; }
     static bool setThreadProcessor(u32 coreIdx, u32 logicalProcessorIdx, void *threadHandle) noexcept { return false; }
     static bool setCurrentThreadProcessor(u32 coreIdx, u32 logicalProcessorIdx) noexcept { return false; }
+    static bool setThreadGroupAffinity(u32 grpIdx, u64 affinityMask, void *threadHandle) noexcept { return false; }
 };
 
 } // namespace copat

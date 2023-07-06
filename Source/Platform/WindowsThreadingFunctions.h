@@ -25,6 +25,7 @@ public:
     static void getCoreCount(u32 &outCoreCount, u32 &outLogicalProcessorCount) noexcept;
     static bool setThreadProcessor(u32 coreIdx, u32 logicalProcessorIdx, void *threadHandle) noexcept;
     static bool setCurrentThreadProcessor(u32 coreIdx, u32 logicalProcessorIdx) noexcept;
+    static bool setThreadGroupAffinity(u32 grpIdx, u64 affinityMask, void *threadHandle) noexcept;
 };
 
 } // namespace copat
