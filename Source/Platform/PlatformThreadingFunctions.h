@@ -19,6 +19,7 @@ using PlatformThreadingFuncs = WindowsThreadingFunctions;
 #error Not supported platform
 #endif
 
+COPAT_NS_INLINED
 namespace copat
 {
 inline GenericThreadingFunctions::GroupAffinityMaskBuilder::GroupAffinityMaskBuilder()
