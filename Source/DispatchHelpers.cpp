@@ -17,30 +17,79 @@
 COPAT_NS_INLINED
 namespace copat
 {
+using DispatchInfo = DispatchInfoBase<void>;
+using GroupDispatchInfo = GroupDispatchInfoBase<void>;
+
 // Just copying the callback so a copy exists inside dispatch
-DispatchAwaitableType dispatchOneTask(JobSystem &jobSys, EJobPriority jobPriority, DispatchFunctionType callback, u32 jobIdx) noexcept
+DispatchAwaitableType dispatchOneTask(JobSystem &jobSys, EJobPriority jobPriority, DispatchInfo info) noexcept
 {
-    callback(jobIdx);
-    co_return;
-}
-DispatchAwaitableType
-dispatchTaskGroup(JobSystem &jobSys, EJobPriority jobPriority, DispatchFunctionType callback, u32 fromJobIdx, u32 count) noexcept
-{
-    const u32 endJobIdx = fromJobIdx + count;
-    for (u32 jobIdx = fromJobIdx; jobIdx < endJobIdx; ++jobIdx)
+    DispatchAwaitableType childDispatch{ nullptr };
+    if (info.dispatchCount)
     {
-        callback(jobIdx);
+        DispatchInfo newInfo = info;
+        newInfo.dispatchCount--;
+        newInfo.jobIdx++;
+
+        childDispatch = std::move(dispatchOneTask(jobSys, jobPriority, newInfo));
     }
-    co_return;
+    info.callback(info.jobIdx);
+    co_await childDispatch;
 }
 
-AwaitAllTasks<std::vector<DispatchAwaitableType>> dispatch(
+DispatchAwaitableType dispatchTaskGroup(JobSystem &jobSys, EJobPriority jobPriority, GroupDispatchInfo info) noexcept
+{
+    DispatchAwaitableType childDispatch{ nullptr };
+    if (info.base.dispatchCount)
+    {
+        GroupDispatchInfo newInfo = info;
+        newInfo.base.dispatchCount--;
+        newInfo.grpIdx++;
+        newInfo.base.jobIdx += newInfo.jobsPerGrp;
+
+        childDispatch = std::move(dispatchTaskGroup(jobSys, jobPriority, newInfo));
+    }
+    const u32 endJobIdx = info.base.jobIdx + info.jobsPerGrp;
+    for (u32 jobIdx = info.base.jobIdx; jobIdx < endJobIdx; ++jobIdx)
+    {
+        info.base.callback(jobIdx);
+    }
+    co_await childDispatch;
+}
+DispatchAwaitableType dispatchExtendedTaskGroup(JobSystem &jobSys, EJobPriority jobPriority, GroupDispatchInfo info) noexcept
+{
+    DispatchAwaitableType childDispatch{ nullptr };
+    if (info.base.dispatchCount)
+    {
+        GroupDispatchInfo newInfo = info;
+        newInfo.base.dispatchCount--;
+        newInfo.grpIdx++;
+        newInfo.base.jobIdx += newInfo.jobsPerGrp + 1;
+        if (newInfo.extendedGrpsCount)
+        {
+            newInfo.extendedGrpsCount--;
+
+            childDispatch = std::move(dispatchExtendedTaskGroup(jobSys, jobPriority, newInfo));
+        }
+        else
+        {
+            childDispatch = std::move(dispatchTaskGroup(jobSys, jobPriority, newInfo));
+        }
+    }
+    const u32 endJobIdx = info.base.jobIdx + info.jobsPerGrp + 1;
+    for (u32 jobIdx = info.base.jobIdx; jobIdx < endJobIdx; ++jobIdx)
+    {
+        info.base.callback(jobIdx);
+    }
+    co_await childDispatch;
+}
+
+DispatchAwaitableType dispatch(
     JobSystem *jobSys, const DispatchFunctionType &callback, u32 count, EJobPriority jobPriority /* = EJobPriority::Priority_Normal */
 ) noexcept
 {
     if (count == 0)
     {
-        return {};
+        return { nullptr };
     }
 
     // If there is no worker threads and the current thread is same as queuing thread then execute serially.
@@ -54,42 +103,43 @@ AwaitAllTasks<std::vector<DispatchAwaitableType>> dispatch(
         {
             callback(i);
         }
-        return {};
+        return { nullptr };
     }
 
     const u32 grpCount = jobSys->getWorkersCount();
 
-    std::vector<DispatchAwaitableType> dispatchedJobs;
-
-    u32 jobsPerGrp = count / grpCount;
-    // If dispatching count is less than max workers count
-    if (jobsPerGrp == 0)
+    DispatchAwaitableType dispatchedJobs{ nullptr };
+    // If dispatching count is less than or equal to max group count
+    if (count <= grpCount)
     {
-        dispatchedJobs.reserve(count);
-        for (u32 i = 0; i < count; ++i)
-        {
-            dispatchedJobs.emplace_back(std::move(dispatchOneTask(*jobSys, jobPriority, callback, i)));
-        }
+        dispatchedJobs = dispatchOneTask(*jobSys, jobPriority, { .callback = callback, .jobIdx = 0, .dispatchCount = (count - 1) });
     }
     else
     {
-        dispatchedJobs.reserve(grpCount);
+        u32 jobsPerGrp = count / grpCount;
         u32 grpsWithMoreJobCount = count % grpCount;
-        u32 jobIdx = 0;
-        for (u32 i = 0; i < grpsWithMoreJobCount; ++i)
+        if (grpsWithMoreJobCount > 0)
         {
-            // Add one more job for all grps with more jobs
-            dispatchedJobs.emplace_back(std::move(dispatchTaskGroup(*jobSys, jobPriority, callback, jobIdx, jobsPerGrp + 1)));
-            jobIdx += jobsPerGrp + 1;
+            GroupDispatchInfo info{
+                .base = {.callback = callback, .jobIdx = 0, .dispatchCount = (grpCount - 1)},
+                .jobsPerGrp = jobsPerGrp,
+                .extendedGrpsCount = (grpsWithMoreJobCount - 1),
+                .grpIdx = 0
+            };
+            dispatchedJobs = dispatchExtendedTaskGroup(*jobSys, jobPriority, info);
         }
-
-        for (u32 i = grpsWithMoreJobCount; i < grpCount; ++i)
+        else
         {
-            dispatchedJobs.emplace_back(std::move(dispatchTaskGroup(*jobSys, jobPriority, callback, jobIdx, jobsPerGrp)));
-            jobIdx += jobsPerGrp;
+            GroupDispatchInfo info{
+                .base = {.callback = callback, .jobIdx = 0, .dispatchCount = (grpCount - 1)},
+                .jobsPerGrp = jobsPerGrp,
+                .extendedGrpsCount = 0,
+                .grpIdx = 0
+            };
+            dispatchedJobs = dispatchTaskGroup(*jobSys, jobPriority, info);
         }
     }
-    return awaitAllTasks(std::move(dispatchedJobs));
+    return std::move(dispatchedJobs);
 }
 
 void parallelFor(
@@ -110,12 +160,12 @@ void parallelFor(
     u32 jobsPerGrp = count / grpCount;
     jobsPerGrp += (count % grpCount) > 0;
 
-    AwaitAllTasks<std::vector<DispatchAwaitableType>> allAwaits = dispatch(jobSys, callback, count - jobsPerGrp, jobPriority);
+    DispatchAwaitableType awaitable = dispatch(jobSys, callback, count - jobsPerGrp, jobPriority);
     for (u32 jobIdx = count - jobsPerGrp; jobIdx < count; ++jobIdx)
     {
         callback(jobIdx);
     }
-    waitOnAwaitable(std::move(allAwaits));
+    waitOnAwaitable(std::move(awaitable));
 }
 
 } // namespace copat

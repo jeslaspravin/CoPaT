@@ -33,10 +33,33 @@ using DispatchAwaitableTypeWithRet
 template <typename RetType>
 using DispatchFunctionTypeWithRet = FunctionType<RetType, u32>;
 
+template <typename RetType>
+struct DispatchInfoBase
+{
+    /* Job to run */
+    DispatchFunctionTypeWithRet<RetType> callback;
+
+    /* This job index, Increment if dispatching more from this coroutine */
+    u32 jobIdx;
+    /* Count of dispatches left, excluding current coroutine. Decrement before each dispatch */
+    u32 dispatchCount;
+};
+
+template <typename RetType>
+struct GroupDispatchInfoBase
+{
+    DispatchInfoBase<RetType> base;
+    u32 jobsPerGrp;
+    /* Number of groups that has +1 jobs, Decrement before each extended grps dispatch */
+    u32 extendedGrpsCount;
+    /* Used to index outAwaitables, Increment before each group dispatch */
+    u32 grpIdx;
+};
+
 using DispatchAwaitableType = DispatchAwaitableTypeWithRet<void>;
 using DispatchFunctionType = DispatchFunctionTypeWithRet<void>;
 
-COPAT_EXPORT_SYM AwaitAllTasks<std::vector<DispatchAwaitableType>>
+COPAT_EXPORT_SYM DispatchAwaitableType
 dispatch(JobSystem *jobSys, const DispatchFunctionType &callback, u32 count, EJobPriority jobPriority = EJobPriority::Priority_Normal) noexcept;
 
 // Dispatch and wait immediately
@@ -56,32 +79,125 @@ struct DispatchWithReturn
 {
     using AwaitableType = DispatchAwaitableTypeWithRet<std::vector<RetType>>;
     using FuncType = DispatchFunctionTypeWithRet<RetType>;
+    using DispatchInfoType = DispatchInfoBase<RetType>;
+    using GroupDispatchInfoType = GroupDispatchInfoBase<RetType>;
 
     // Just copying the callback so a copy exists inside dispatch
-    static AwaitableType dispatchOneTask(JobSystem &jobSys, EJobPriority jobPriority, FuncType callback, u32 jobIdx) noexcept
+    static AwaitableType dispatchTask(JobSystem &jobSys, EJobPriority jobPriority, DispatchInfoType info) noexcept
     {
-        std::vector<RetType> retVal{ callback(jobIdx) };
-        co_return retVal;
-    }
-    static AwaitableType dispatchTaskGroup(JobSystem &jobSys, EJobPriority jobPriority, FuncType callback, u32 fromJobIdx, u32 count) noexcept
-    {
-        std::vector<RetType> retVal;
-        retVal.reserve(count);
-
-        const u32 endJobIdx = fromJobIdx + count;
-        for (u32 jobIdx = fromJobIdx; jobIdx < endJobIdx; ++jobIdx)
+        AwaitableType childDispatch{ nullptr };
+        if (info.dispatchCount)
         {
-            retVal.emplace_back(callback(jobIdx));
+            DispatchInfoType newInfo = info;
+            newInfo.dispatchCount--;
+            newInfo.jobIdx++;
+
+            childDispatch = std::move(dispatchTask(jobSys, jobPriority, newInfo));
         }
+
+        /* Preallocate required size, before awaiting children */
+        std::vector<RetType> retVal;
+        retVal.reserve(1 + info.dispatchCount);
+
+        /* Execute job */
+        retVal.emplace_back(info.callback(info.jobIdx));
+
+        /* Only await for return if dispatched */
+        if (info.dispatchCount)
+        {
+            std::vector<RetType> childRets = co_await childDispatch;
+            for (RetType &childRet : childRets)
+            {
+                retVal.emplace_back(std::move(childRet));
+            }
+        }
+
+        co_return retVal;
+    }
+    static AwaitableType dispatchTaskGroup(JobSystem &jobSys, EJobPriority jobPriority, GroupDispatchInfoType info) noexcept
+    {
+        AwaitableType childDispatch{ nullptr };
+        if (info.base.dispatchCount)
+        {
+            GroupDispatchInfoType newInfo = info;
+            newInfo.base.dispatchCount--;
+            newInfo.grpIdx++;
+            newInfo.base.jobIdx += newInfo.jobsPerGrp;
+
+            childDispatch = std::move(dispatchTaskGroup(jobSys, jobPriority, newInfo));
+        }
+        /* Preallocate required size, before awaiting children */
+        std::vector<RetType> retVal;
+        retVal.reserve(info.jobsPerGrp + info.base.dispatchCount * info.jobsPerGrp);
+
+        /* Execute jobs */
+        const u32 endJobIdx = info.base.jobIdx + info.jobsPerGrp;
+        for (u32 jobIdx = info.base.jobIdx; jobIdx < endJobIdx; ++jobIdx)
+        {
+            retVal.emplace_back(info.base.callback(jobIdx));
+        }
+
+        /* Only await for return if dispatched */
+        if (info.base.dispatchCount)
+        {
+            std::vector<RetType> childRets = co_await childDispatch;
+            for (RetType &childRet : childRets)
+            {
+                retVal.emplace_back(std::move(childRet));
+            }
+        }
+
+        co_return retVal;
+    }
+    static AwaitableType dispatchExtendedTaskGroup(JobSystem &jobSys, EJobPriority jobPriority, GroupDispatchInfoType info) noexcept
+    {
+        AwaitableType childDispatch{ nullptr };
+        if (info.base.dispatchCount)
+        {
+            GroupDispatchInfoType newInfo = info;
+            newInfo.base.dispatchCount--;
+            newInfo.grpIdx++;
+            newInfo.base.jobIdx += newInfo.jobsPerGrp + 1;
+            if (newInfo.extendedGrpsCount)
+            {
+                newInfo.extendedGrpsCount--;
+
+                childDispatch = std::move(dispatchExtendedTaskGroup(jobSys, jobPriority, newInfo));
+            }
+            else
+            {
+                childDispatch = std::move(dispatchTaskGroup(jobSys, jobPriority, newInfo));
+            }
+        }
+        /* Preallocate required size, before awaiting children */
+        std::vector<RetType> retVal;
+        retVal.reserve(info.jobsPerGrp + 1 + info.base.dispatchCount * info.jobsPerGrp + info.extendedGrpsCount);
+
+        /* Execute jobs */
+        const u32 endJobIdx = info.base.jobIdx + info.jobsPerGrp + 1;
+        for (u32 jobIdx = info.base.jobIdx; jobIdx < endJobIdx; ++jobIdx)
+        {
+            retVal.emplace_back(info.base.callback(jobIdx));
+        }
+
+        /* Only await for return if dispatched */
+        if (info.base.dispatchCount)
+        {
+            std::vector<RetType> childRets = co_await childDispatch;
+            for (RetType &childRet : childRets)
+            {
+                retVal.emplace_back(std::move(childRet));
+            }
+        }
+
         co_return retVal;
     }
 
-    static AwaitAllTasks<std::vector<AwaitableType>>
-    dispatch(JobSystem *jobSys, const FuncType &callback, u32 count, EJobPriority jobPriority) noexcept
+    static AwaitableType dispatch(JobSystem *jobSys, const FuncType &callback, u32 count, EJobPriority jobPriority) noexcept
     {
         if (count == 0)
         {
-            return {};
+            return { nullptr };
         }
 
         /**
@@ -94,37 +210,38 @@ struct DispatchWithReturn
 
         const u32 grpCount = jobSys->getWorkersCount();
 
-        std::vector<AwaitableType> dispatchedJobs;
-
-        u32 jobsPerGrp = count / grpCount;
-        // If dispatching count is less than max workers count
-        if (jobsPerGrp == 0)
+        AwaitableType dispatchedJobs{ nullptr };
+        // If dispatching count is less than or equal to max group count
+        if (count <= grpCount)
         {
-            dispatchedJobs.reserve(count);
-            for (u32 i = 0; i < count; ++i)
-            {
-                dispatchedJobs.emplace_back(std::move(dispatchOneTask(*jobSys, jobPriority, callback, i)));
-            }
+            dispatchedJobs = dispatchTask(*jobSys, jobPriority, { .callback = callback, .jobIdx = 0, .dispatchCount = (count - 1) });
         }
         else
         {
-            dispatchedJobs.reserve(grpCount);
+            u32 jobsPerGrp = count / grpCount;
             u32 grpsWithMoreJobCount = count % grpCount;
-            u32 jobIdx = 0;
-            for (u32 i = 0; i < grpsWithMoreJobCount; ++i)
+            if (grpsWithMoreJobCount > 0)
             {
-                // Add one more job for all grps with more jobs
-                dispatchedJobs.emplace_back(std::move(dispatchTaskGroup(*jobSys, jobPriority, callback, jobIdx, jobsPerGrp + 1)));
-                jobIdx += jobsPerGrp + 1;
+                GroupDispatchInfoType info{
+                    .base = {.callback = callback, .jobIdx = 0, .dispatchCount = (grpCount - 1)},
+                    .jobsPerGrp = jobsPerGrp,
+                    .extendedGrpsCount = (grpsWithMoreJobCount - 1),
+                    .grpIdx = 0
+                };
+                dispatchedJobs = dispatchExtendedTaskGroup(*jobSys, jobPriority, info);
             }
-
-            for (u32 i = grpsWithMoreJobCount; i < grpCount; ++i)
+            else
             {
-                dispatchedJobs.emplace_back(std::move(dispatchTaskGroup(*jobSys, jobPriority, callback, jobIdx, jobsPerGrp)));
-                jobIdx += jobsPerGrp;
+                GroupDispatchInfoType info{
+                    .base = {.callback = callback, .jobIdx = 0, .dispatchCount = (grpCount - 1)},
+                    .jobsPerGrp = jobsPerGrp,
+                    .extendedGrpsCount = 0,
+                    .grpIdx = 0
+                };
+                dispatchedJobs = dispatchTaskGroup(*jobSys, jobPriority, info);
             }
         }
-        return awaitAllTasks(std::move(dispatchedJobs));
+        return std::move(dispatchedJobs);
     }
 };
 
@@ -144,18 +261,13 @@ auto diverge(
 }
 
 template <typename RetType>
-std::vector<RetType> converge(AwaitAllTasks<std::vector<DispatchAwaitableTypeWithRet<std::vector<RetType>>>> &&allAwaits) noexcept
+std::vector<RetType> converge(DispatchAwaitableTypeWithRet<std::vector<RetType>> &&awaitable) noexcept
 {
     static_assert(
         std::is_same_v<DispatchAwaitableTypeWithRet<std::vector<RetType>>, typename DispatchWithReturn<RetType>::AwaitableType>,
         "Type mismatch between dispatch and diverge functions"
     );
-    std::vector<RetType> retVal;
-    for (auto &awaitable : waitOnAwaitable(allAwaits))
-    {
-        retVal.insert(retVal.end(), awaitable.getReturnValue().cbegin(), awaitable.getReturnValue().cend());
-    }
-    return retVal;
+    return waitOnAwaitable(awaitable);
 }
 
 // diverge, converge immediately and returns the result
@@ -180,7 +292,8 @@ std::vector<RetType> parallelForReturn(
     u32 jobsPerGrp = count / grpCount;
     jobsPerGrp += (count % grpCount) > 0;
 
-    AwaitAllTasks<std::vector<AwaitableType>> allAwaits = diverge(jobSys, callback, count - jobsPerGrp, jobPriority);
+    const u32 dispatchCount = count - jobsPerGrp;
+    AwaitableType awaitable = diverge(jobSys, callback, dispatchCount, jobPriority);
 
     std::vector<RetType> lastGrpRets;
     lastGrpRets.reserve(jobsPerGrp);
@@ -189,7 +302,11 @@ std::vector<RetType> parallelForReturn(
         lastGrpRets.emplace_back(callback(jobIdx));
     }
 
-    retVals = converge(std::move(allAwaits));
+    /* Only converge if diverge is valid */
+    if (dispatchCount)
+    {
+        retVals = converge(std::move(awaitable));
+    }
     for (RetType &retVal : lastGrpRets)
     {
         retVals.emplace_back(std::move(retVal));
