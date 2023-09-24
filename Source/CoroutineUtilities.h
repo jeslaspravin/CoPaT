@@ -4,7 +4,7 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, Since 2022
+ *  Copyright (C) Jeslas Pravin, 2022-2023
  *  @jeslaspravin pravinjeslas@gmail.com
  *  License can be read in LICENSE file at this repository's root
  */
@@ -22,7 +22,7 @@ namespace copat
 {
 
 //////////////////////////////////////////////////////////////////////////
-/// Coroutine type traits
+/// Coroutine common type traits
 //////////////////////////////////////////////////////////////////////////
 
 template <typename AwaiterType, typename = void>
@@ -141,7 +141,7 @@ template <typename AwaitableType>
 using GetAwaiterType_t = GetAwaiterType<AwaitableType>::type;
 
 //////////////////////////////////////////////////////////////////////////
-/// CoPaT type traits
+/// CoPaT coroutine type traits
 //////////////////////////////////////////////////////////////////////////
 
 class JobSystem;

@@ -6,7 +6,7 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, Since 2022
+ *  Copyright (C) Jeslas Pravin, 2022-2023
  *  @jeslaspravin pravinjeslas@gmail.com
  *  License can be read in LICENSE file at this repository's root
  */
@@ -85,6 +85,7 @@
  */
 // #define OVERRIDE_PROFILER_CHAR(expr)
 // #define OVERRIDE_PROFILER_SCOPE(Name)
+// #define OVERRIDE_PROFILER_SCOPE_VALUE(Name, Value)
 
 /**
  * Override PlatformThreadingFunctions.
@@ -160,6 +161,12 @@
 #define COPAT_PROFILER_SCOPE(Name) OVERRIDE_PROFILER_SCOPE(Name)
 #else
 #define COPAT_PROFILER_SCOPE(Name)
+#endif
+
+#ifdef OVERRIDE_PROFILER_SCOPE_VALUE
+#define COPAT_PROFILER_SCOPE_VALUE(Name, Value) OVERRIDE_PROFILER_SCOPE_VALUE(Name, Value)
+#else
+#define COPAT_PROFILER_SCOPE_VALUE(Name, Value)
 #endif
 
 #ifdef OVERRIDE_PROFILER_CHAR
