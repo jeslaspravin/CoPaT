@@ -273,11 +273,11 @@ public:
                 {
                     // Try acquire existing deleting node if any present
                     Node *newNode = hazardsManager.dequeueDelete();
-                    if (newNode) [[unlikely]]
+                    if (newNode) [[likely]]
                     {
                         QueueNodeAllocTracker::pushActiveReuse();
                     }
-                    else [[likely]]
+                    else [[unlikely]]
                     {
                         newNode = (Node *)(CoPaTMemAlloc::memAlloc(sizeof(Node), alignof(Node)));
                         QueueNodeAllocTracker::pushActiveNew();
@@ -444,11 +444,11 @@ public:
                     // Try acquire existing deleting node if any present,
                     // Mostly it won't be present as MPSC other threads enqueues and this thread dequeues
                     Node *newNode = hazardsManager.dequeueDelete();
-                    if (newNode) [[unlikely]]
+                    if (newNode) [[likely]]
                     {
                         QueueNodeAllocTracker::pushActiveReuse();
                     }
-                    else [[likely]]
+                    else [[unlikely]]
                     {
                         newNode = (Node *)(CoPaTMemAlloc::memAlloc(sizeof(Node), alignof(Node)));
                         QueueNodeAllocTracker::pushActiveNew();
