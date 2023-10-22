@@ -9,8 +9,6 @@
  *  License can be read in LICENSE file at this repository's root
  */
 
-#pragma once
-
 #include "CoroutineUtilities.h"
 #include "JobSystem.h"
 
