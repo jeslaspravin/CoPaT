@@ -4,7 +4,7 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2023
+ *  Copyright (C) Jeslas Pravin, 2022-2024
  *  @jeslaspravin pravinjeslas@gmail.com
  *  License can be read in LICENSE file at this repository's root
  */
@@ -113,7 +113,10 @@ void JobSystem::initialize(MainThreadTickFunc &&mainTick, void *inUserData) noex
     // Setup main thread
     mainThreadTick = std::forward<MainThreadTickFunc>(mainTick);
     userData = inUserData;
-    mainThreadJobs->setupQueue(qSharedContext);
+    for (EJobPriority priority = Priority_Critical; priority < Priority_MaxPriority; priority = EJobPriority(priority + 1))
+    {
+        mainThreadJobs[priority].setupQueue(qSharedContext);
+    }
     PlatformThreadingFuncs::setCurrentThreadName(COPAT_TCHAR("MainThread"));
     PlatformThreadingFuncs::setCurrentThreadProcessor(0, 0);
     PerThreadData &mainThreadData = getOrCreatePerThreadData();
@@ -554,6 +557,6 @@ WorkerQHazardToken *WorkerThreadsPool::allocateEnqTokens() noexcept
     return tokens;
 }
 
-u32 WorkerThreadsPool::hazardTokensCount() const { return ownerJobSystem->getTotalThreadsCount() * workerQsCount(); }
+u32 WorkerThreadsPool::hazardTokensCount() const { return ownerJobSystem ? ownerJobSystem->getTotalThreadsCount() * workerQsCount() : 0; }
 
 } // namespace copat
