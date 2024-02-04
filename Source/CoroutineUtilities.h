@@ -4,7 +4,7 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2023
+ *  Copyright (C) Jeslas Pravin, 2022-2024
  *  @jeslaspravin pravinjeslas@gmail.com
  *  License can be read in LICENSE file at this repository's root
  */
@@ -257,6 +257,28 @@ public:
 
 private:
     COPAT_EXPORT_SYM void enqueueToJs(std::coroutine_handle<> h, EJobPriority priority) const noexcept;
+};
+
+/**
+ * Get enqueue/owner job system of a coroutine
+ */
+struct GetEnqJobSystem
+{
+private:
+    JobSystem *enqToJs = nullptr;
+
+public:
+    GetEnqJobSystem() = default;
+
+    constexpr bool await_ready() const noexcept { return false; }
+    template <JobSystemPromiseType PromiseType>
+    bool await_suspend(std::coroutine_handle<PromiseType> h) noexcept
+    {
+        enqToJs = h.promise().enqToJobSystem;
+        /* Just wanted the job system, no need to suspend */
+        return false;
+    }
+    constexpr JobSystem *await_resume() const noexcept { return enqToJs; }
 };
 
 //////////////////////////////////////////////////////////////////////////
