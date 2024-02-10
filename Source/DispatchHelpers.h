@@ -4,7 +4,7 @@
  * \author Jeslas
  * \date June 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2023
+ *  Copyright (C) Jeslas Pravin, 2022-2024
  *  @jeslaspravin pravinjeslas@gmail.com
  *  License can be read in LICENSE file at this repository's root
  */
@@ -84,18 +84,21 @@ struct DispatchWithReturn
             return {};
         }
 
-        /**
-         * If there is no worker threads then we cannot dispatch so fail.
-         * Asserting here as there is no direct way to return as AwaitableType immediately.
-         * TODO(Jeslas) : Find an work around if this becomes a problem.S
-         * Maybe I could have a coroutine to execute immediately and wait at final_suspend?
-         */
-        COPAT_ASSERT(jobSys && jobSys->enqToThreadType(EJobThreadType::WorkerThreads) == EJobThreadType::WorkerThreads);
-
-        const u32 grpCount = jobSys->getWorkersCount();
+        COPAT_ASSERT(jobSys);
 
         std::vector<AwaitableType> dispatchedJobs;
+        /**
+         * If there is no worker threads then we cannot actually diverge.
+         * Queuing the jobs to the corresponding enqueue to thread.
+         * Caller must ensure not to trigger dead lock when calling converge.
+         */
+        if (jobSys->enqToThreadType(EJobThreadType::WorkerThreads) != EJobThreadType::WorkerThreads)
+        {
+            dispatchedJobs.emplace_back(std::move(dispatchTaskGroup(*jobSys, jobPriority, callback, 0, count)));
+            return awaitAllTasks(std::move(dispatchedJobs));
+        }
 
+        const u32 grpCount = jobSys->getWorkersCount();
         u32 jobsPerGrp = count / grpCount;
         // If dispatching count is less than max workers count
         if (jobsPerGrp == 0)
@@ -171,7 +174,11 @@ std::vector<RetType> parallelForReturn(
         return retVals;
     }
 
-    COPAT_ASSERT(jobSys);
+    /**
+     * Cannot diverge and converge here if there is not workers.
+     * Caller must call diverge and converge separately making sure not to dead lock.
+     */
+    COPAT_ASSERT(jobSys && jobSys->enqToThreadType(EJobThreadType::WorkerThreads) == EJobThreadType::WorkerThreads);
 
     const u32 grpCount = jobSys->getWorkersCount();
 
