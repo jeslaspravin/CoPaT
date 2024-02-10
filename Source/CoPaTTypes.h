@@ -27,7 +27,7 @@ class JobSystem;
 /**
  * MainThread must be 0 and any other threads must be sequential values from 1 to WorkerThreads - 1
  */
-enum class EJobThreadType
+enum class EJobThreadType : u32
 {
     MainThread = 0,
     // User added thread types start
@@ -37,7 +37,7 @@ enum class EJobThreadType
     MaxThreads
 };
 
-enum EJobPriority
+enum EJobPriority : u32
 {
     Priority_Critical = 0,
     Priority_Normal,
@@ -100,6 +100,7 @@ public:
         PadOffsetType *offsetPtr = reinterpret_cast<PadOffsetType *>(dataStart - sizeof(PadOffsetType));
         ::free(reinterpret_cast<void *>(dataStart - *offsetPtr));
     }
+    static void memFree(const void *ptr) noexcept { memFree(const_cast<void *>(ptr)); }
 };
 using CoPaTMemAlloc = DefaultCoPaTMemAlloc;
 #else

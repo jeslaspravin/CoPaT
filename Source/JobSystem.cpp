@@ -37,7 +37,7 @@ JobSystem::EThreadingConstraint getThreadingConstraint(u32 constraints)
 
 JobSystem *JobSystem::singletonInstance = nullptr;
 
-JobSystem::JobSystem(u32 constraints)
+JobSystem::JobSystem(u32 constraints, const TChar *jobSysName)
     : threadingConstraints(constraints)
     , workerThreadsPool(calculateWorkersCount())
 {
@@ -45,8 +45,9 @@ JobSystem::JobSystem(u32 constraints)
     {
         enqIndirection[i] = EJobThreadType(i);
     }
+    setJobSystemName(jobSysName);
 }
-JobSystem::JobSystem(u32 inWorkerCount, u32 constraints)
+JobSystem::JobSystem(u32 inWorkerCount, u32 constraints, const TChar *jobSysName)
     : threadingConstraints(constraints)
     , workerThreadsPool(inWorkerCount)
 {
@@ -54,6 +55,7 @@ JobSystem::JobSystem(u32 inWorkerCount, u32 constraints)
     {
         enqIndirection[i] = EJobThreadType(i);
     }
+    setJobSystemName(jobSysName);
 }
 
 #define NO_SPECIALTHREADS_INDIR_SETUP(ThreadType) enqIndirection[u32(EJobThreadType::##ThreadType)] = EJobThreadType::MainThread;
@@ -61,7 +63,7 @@ JobSystem::JobSystem(u32 inWorkerCount, u32 constraints)
     enqIndirection[u32(EJobThreadType::##ThreadType)]                                                                                          \
         = (threadingConstraints & NOSPECIALTHREAD_ENUM_TO_FLAGBIT(ThreadType)) ? EJobThreadType::MainThread : EJobThreadType::##ThreadType;
 
-void JobSystem::initialize(MainThreadTickFunc &&mainTick, void *inUserData) noexcept
+void JobSystem::initialize(InitInterface &&initIxx, void *inUserData) noexcept
 {
     COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatInit"));
 
@@ -78,6 +80,12 @@ void JobSystem::initialize(MainThreadTickFunc &&mainTick, void *inUserData) noex
     EThreadingConstraint tConstraint = getThreadingConstraint(threadingConstraints);
     const bool bEnableSpecials = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoSpecialThreads);
     const bool bEnableWorkers = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoWorkerThreads);
+
+    /* Setup common data */
+    mainThreadTick = std::move(initIxx.mainThreadTick);
+    tlDataCreate = std::move(initIxx.createTlData);
+    tlDataDelete = std::move(initIxx.deleteTlData);
+    COPAT_ASSERT((tlDataCreate && tlDataDelete) || (!tlDataCreate && !tlDataDelete));
 
     /* Setup special threads */
     if (bEnableSpecials)
@@ -110,17 +118,17 @@ void JobSystem::initialize(MainThreadTickFunc &&mainTick, void *inUserData) noex
         workerThreadsPool.run(&JobSystem::doWorkerJobs, bSetThreadAffinity);
     }
 
-    // Setup main thread
-    mainThreadTick = std::forward<MainThreadTickFunc>(mainTick);
+    /* Setup main thread */
     userData = inUserData;
     for (EJobPriority priority = Priority_Critical; priority < Priority_MaxPriority; priority = EJobPriority(priority + 1))
     {
         mainThreadJobs[priority].setupQueue(qSharedContext);
     }
-    PlatformThreadingFuncs::setCurrentThreadName(COPAT_TCHAR("MainThread"));
+    TChar threadNameBuffer[257] = { 0 };
+    COPAT_PRINTF(threadNameBuffer, COPAT_TCHAR("%s_MainThread"), jsName);
+    PlatformThreadingFuncs::setCurrentThreadName(threadNameBuffer);
     PlatformThreadingFuncs::setCurrentThreadProcessor(0, 0);
-    PerThreadData &mainThreadData = getOrCreatePerThreadData();
-    mainThreadData.threadType = EJobThreadType::MainThread;
+    createPerThreadData(EJobThreadType::MainThread, 0);
 }
 #undef NO_SPECIALTHREADS_INDIR_SETUP
 #undef SPECIALTHREAD_INDIR_SETUP
@@ -148,11 +156,13 @@ void JobSystem::shutdown() noexcept
         workerThreadsPool.shutdown();
     }
 
-    memDelete(mainThreadTlData);
+    deletePerThreadData(mainThreadTlData);
     if (singletonInstance == this)
     {
         singletonInstance = nullptr;
     }
+
+    CoPaTMemAlloc::memFree(jsName);
 }
 
 void JobSystem::enqueueJob(
@@ -209,29 +219,45 @@ JobSystem::PerThreadData::PerThreadData(
     SpecialThreadQueueType *mainQs, WorkerThreadsPool &workerThreadPool, SpecialThreadsPoolType &specialThreadPool
 )
     : threadType(EJobThreadType::WorkerThreads)
+    , threadIdx(0)
     , mainQTokens{ mainQs[Priority_Critical].getHazardToken(), mainQs[Priority_Normal].getHazardToken(), mainQs[Priority_Low].getHazardToken() }
     , workerQsTokens(workerThreadPool.allocateEnqTokens())
     , specialQsTokens(specialThreadPool.allocateEnqTokens())
+    , tlUserData(nullptr)
 {}
 
-copat::JobSystem::PerThreadData &JobSystem::getOrCreatePerThreadData() noexcept
+copat::JobSystem::PerThreadData &JobSystem::createPerThreadData(EJobThreadType threadType, u32 threadIdx) noexcept
 {
     PerThreadData *threadData = (PerThreadData *)PlatformThreadingFuncs::getTlsSlotValue(tlsSlot);
-    if (!threadData)
-    {
-        PerThreadData *newThreadData = memNew<PerThreadData>(mainThreadJobs, workerThreadsPool, specialThreadsPool);
+    COPAT_ASSERT(threadData == nullptr);
 
-        PlatformThreadingFuncs::setTlsSlotValue(tlsSlot, newThreadData);
-        threadData = (PerThreadData *)PlatformThreadingFuncs::getTlsSlotValue(tlsSlot);
-    }
+    PerThreadData *newThreadData = memNew<PerThreadData>(mainThreadJobs, workerThreadsPool, specialThreadsPool);
+    newThreadData->threadType = threadType;
+    newThreadData->threadIdx = threadIdx;
+    newThreadData->tlUserData = tlDataCreate ? tlDataCreate(userData, threadType, threadIdx) : nullptr;
+
+    PlatformThreadingFuncs::setTlsSlotValue(tlsSlot, newThreadData);
+    threadData = (PerThreadData *)PlatformThreadingFuncs::getTlsSlotValue(tlsSlot);
+    COPAT_ASSERT(threadData == newThreadData);
+
     return *threadData;
+}
+
+void JobSystem::deletePerThreadData(PerThreadData *tlData) noexcept
+{
+    if (tlDataDelete && tlData->tlUserData)
+    {
+        tlDataDelete(userData, tlData->threadType, tlData->threadIdx, tlData->tlUserData);
+    }
+    memDelete(tlData);
 }
 
 void JobSystem::runMain() noexcept
 {
     // Main thread data gets created and destroy in initialize and shutdown resp.
     PerThreadData *tlData = getPerThreadData();
-    tlData->threadType = EJobThreadType::MainThread;
+    COPAT_ASSERT(tlData->threadType == EJobThreadType::MainThread);
+
     while (true)
     {
         COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatMainTick"));
@@ -269,8 +295,8 @@ void JobSystem::runMain() noexcept
 
 void JobSystem::doWorkerJobs(u32 threadIdx) noexcept
 {
-    PerThreadData *tlData = &getOrCreatePerThreadData();
-    tlData->threadType = EJobThreadType::WorkerThreads;
+    PerThreadData *tlData = &createPerThreadData(EJobThreadType::WorkerThreads, threadIdx);
+    COPAT_ASSERT(tlData->threadType == EJobThreadType::WorkerThreads);
 
     auto randomNum = [seed = threadIdx]() mutable
     {
@@ -343,7 +369,7 @@ void JobSystem::doWorkerJobs(u32 threadIdx) noexcept
         workerThreadsPool.waitForJob(threadIdx);
     }
     workerThreadsPool.onWorkerThreadExit();
-    memDelete(tlData);
+    deletePerThreadData(tlData);
 }
 
 copat::u32 JobSystem::calculateWorkersCount() const noexcept
@@ -352,6 +378,17 @@ copat::u32 JobSystem::calculateWorkersCount() const noexcept
     getCoreCount(coreCount, logicalProcCount);
     coreCount = coreCount > 4 ? coreCount : 4;
     return coreCount;
+}
+
+void JobSystem::setJobSystemName(const TChar *jobSysName)
+{
+    const u64 nameLen = COPAT_STRLEN(jobSysName);
+    const u64 byteSize = sizeof(TChar) * (nameLen + 1);
+    TChar *nameStr = (TChar *)CoPaTMemAlloc::memAlloc(byteSize);
+    ::memset(nameStr, 0, byteSize);
+    ::memcpy(nameStr, jobSysName, sizeof(TChar) * nameLen);
+
+    jsName = nameStr;
 }
 
 copat::JobSystem::PerThreadData *JobSystem::getPerThreadData() const noexcept
@@ -368,7 +405,9 @@ void INTERNAL_runSpecialThread(INTERNAL_DoSpecialThreadFuncType threadFunc, EJob
                                {
                                    (jobSystem->*threadFunc)();
                                } };
-    PlatformThreadingFuncs::setThreadName(JobSystem::SpecialThreadsPoolType::NAMES[threadIdx], specialThread.native_handle());
+    TChar threadNameBuffer[257] = { 0 };
+    COPAT_PRINTF(threadNameBuffer, COPAT_TCHAR("%s_%s"), jobSystem->getJobSystemName(), JobSystem::SpecialThreadsPoolType::NAMES[threadIdx]);
+    PlatformThreadingFuncs::setThreadName(threadNameBuffer, specialThread.native_handle());
     if (coreCount > u32(threadType))
     {
         // If not enough core just run as free thread
@@ -451,7 +490,9 @@ void WorkerThreadsPool::run(INTERNAL_DoWorkerThreadFuncType doWorkerJobFunc, boo
                             {
                                 (ownerJobSystem->*doWorkerJobFunc)(i);
                             } };
-        PlatformThreadingFuncs::setThreadName((COPAT_TCHAR("WorkerThread_") + COPAT_TOSTRING(i)).c_str(), worker.native_handle());
+        TChar threadNameBuffer[257] = { 0 };
+        COPAT_PRINTF(threadNameBuffer, COPAT_TCHAR("%s_WorkerThread_%u"), ownerJobSystem->getJobSystemName(), i);
+        PlatformThreadingFuncs::setThreadName(threadNameBuffer, worker.native_handle());
         /* If Worker is strictly tied to a logic processor */
         if (bSetAffinity)
         {

@@ -77,7 +77,9 @@
  */
 // #define OVERRIDE_TCHAR_TYPE wchar_t
 // #define OVERRIDE_TCHAR(expr) L##expr
+// #define OVERRIDE_STRLEN(expr) ::strlen(expr)
 // #define OVERRIDE_TOSTRING(expr) std::to_wstring(expr)
+// #define OVERRIDE_PRINTF((&returnArray)[Len], fmt, ...) std::snprintf(returnArray, Len, fmt, __VA_ARGS__)
 
 /**
  * Override for profiler char
@@ -151,10 +153,26 @@
 #define COPAT_TCHAR(x) x
 #endif
 
+#ifdef OVERRIDE_STRLEN
+#define COPAT_STRLEN(x) OVERRIDE_STRLEN(x)
+#else
+#define COPAT_STRLEN(x) ::strlen(x)
+#endif
+
 #ifdef OVERRIDE_TOSTRING
 #define COPAT_TOSTRING(x) OVERRIDE_TOSTRING(x)
 #else
 #define COPAT_TOSTRING(x) std::to_string(x)
+#endif
+
+#ifdef OVERRIDE_PRINTF
+#define COPAT_PRINTF(TCharArray, Fmt, ...) OVERRIDE_PRINTF(TCharArray, Fmt, __VA_ARGS__)
+#else
+#define COPAT_PRINTF(TCharArray, Fmt, ...)                                                                                                     \
+    [&]<u64 Len>(TChar(&outBuffer)[Len])                                                                                                       \
+    {                                                                                                                                          \
+        return std::snprintf(outBuffer, Len, Fmt, __VA_ARGS__);                                                                                \
+    }(TCharArray)
 #endif
 
 #ifdef OVERRIDE_PROFILER_SCOPE

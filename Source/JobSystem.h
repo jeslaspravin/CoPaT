@@ -4,7 +4,7 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2023
+ *  Copyright (C) Jeslas Pravin, 2022-2024
  *  @jeslaspravin pravinjeslas@gmail.com
  *  License can be read in LICENSE file at this repository's root
  */
@@ -247,15 +247,32 @@ private:
 class COPAT_EXPORT_SYM JobSystem
 {
 public:
+    /* void func(void *userData) */
     using MainThreadTickFunc = FunctionType<void, void *>;
+    /* void *func(void *userData, EJobThreadType threadType, u32 threadIdx) */
+    using TlDataCreateFunc = FunctionType<void *, void *, EJobThreadType, u32>;
+    /* void func(void *userData, EJobThreadType threadType, u32 threadIdx, void *tlData) */
+    using TlDataDeleteFunc = FunctionType<void, void *, EJobThreadType, u32, void *>;
     using SpecialThreadsPoolType = SpecialThreadsPool<u32(EJobThreadType::WorkerThreads) - u32(EJobThreadType::MainThread) - 1>;
+
+    struct InitInterface
+    {
+        /* Main thread tick function type, This function gets ticked in main thread for every loop and then main job queue will be emptied */
+        MainThreadTickFunc mainThreadTick;
+        /* Must be synchronized externally */
+        TlDataCreateFunc createTlData;
+        /* Must be synchronized externally */
+        TlDataDeleteFunc deleteTlData;
+    };
 
     struct PerThreadData
     {
         EJobThreadType threadType;
+        u32 threadIdx;
         SpecialQHazardToken mainQTokens[Priority_MaxPriority];
         WorkerQHazardToken *workerQsTokens;
         SpecialQHazardToken *specialQsTokens;
+        void *tlUserData;
 
         PerThreadData(SpecialThreadQueueType *mainQs, WorkerThreadsPool &workerThreadPool, SpecialThreadsPoolType &specialThreadPool);
     };
@@ -289,6 +306,7 @@ public:
 private:
     static JobSystem *singletonInstance;
 
+    const TChar *jsName = nullptr;
     u32 tlsSlot = 0;
     u32 threadingConstraints = EThreadingConstraint::NoConstraints;
 
@@ -301,8 +319,9 @@ private:
     SpecialThreadQueueType mainThreadJobs[Priority_MaxPriority];
     // 0 will be used by main thread loop itself while 1 will be used by worker threads to run until shutdown is called
     std::atomic_flag bExitMain[2];
-    // Main thread tick function type, This function gets ticked in main thread for every loop and then main job queue will be emptied
     MainThreadTickFunc mainThreadTick;
+    TlDataCreateFunc tlDataCreate;
+    TlDataDeleteFunc tlDataDelete;
     void *userData = nullptr;
 
     WorkerThreadsPool workerThreadsPool;
@@ -311,13 +330,27 @@ private:
     EJobThreadType enqIndirection[u32(EJobThreadType::MaxThreads)];
 
 public:
-    // EThreadingConstraint for constraints
-    JobSystem(u32 constraints);
-    JobSystem(u32 inWorkerCount, u32 constraints);
+    /**
+     * copat::JobSystem::JobSystem
+     *
+     * Access: public
+     *
+     * @param u32 constraints - EThreadingConstraint for constraints
+     * @param const TChar * jobSysName - Name to prepend to thread name for debugging.
+     */
+    JobSystem(u32 constraints, const TChar *jobSysName);
+    JobSystem(u32 inWorkerCount, u32 constraints, const TChar *jobSysName);
 
     static JobSystem *get() noexcept { return singletonInstance; }
 
-    void initialize(MainThreadTickFunc &&mainTickFunc, void *inUserData) noexcept;
+    void initialize(InitInterface &&initIxx, void *inUserData) noexcept;
+    /* Overload to match the previous initialize */
+    void initialize(MainThreadTickFunc &&mainTickFunc, void *inUserData) noexcept
+    {
+        initialize(InitInterface{ .mainThreadTick = std::forward<MainThreadTickFunc>(mainTickFunc) }, inUserData);
+    }
+    /* Initialize with no main or user data */
+    void initialize() noexcept { initialize(InitInterface{}, nullptr); }
     void joinMain() noexcept { runMain(); }
     void exitMain() noexcept { bExitMain[0].test_and_set(std::memory_order::release); }
     void shutdown() noexcept;
@@ -329,25 +362,34 @@ public:
 
     EJobThreadType getCurrentThreadType() const noexcept
     {
-        PerThreadData *tlData = getPerThreadData();
-        if (tlData == nullptr)
-        {
-            return EJobThreadType::MaxThreads;
-        }
-        else
+        if (PerThreadData *tlData = getPerThreadData())
         {
             return tlData->threadType;
         }
+        return EJobThreadType::MaxThreads;
     }
     EJobThreadType enqToThreadType(EJobThreadType forThreadType) const { return EJobThreadType(enqIndirection[u32(forThreadType)]); }
     bool isInThread(EJobThreadType threadType) const { return getCurrentThreadType() == enqToThreadType(threadType); }
+    void *getTlUserData() const
+    {
+        if (PerThreadData *tlData = getPerThreadData())
+        {
+            return tlData->tlUserData;
+        }
+        return nullptr;
+    }
 
     u32 getWorkersCount() const { return workerThreadsPool.getWorkersCount(); }
     u32 getTotalThreadsCount() const { return getWorkersCount() + SpecialThreadsPoolType::COUNT + 1 /* Main thread */; }
 
+    const TChar *getJobSystemName() const { return jsName; }
+
 private:
+    void setJobSystemName(const TChar *jobSysName);
+
     PerThreadData *getPerThreadData() const noexcept;
-    PerThreadData &getOrCreatePerThreadData() noexcept;
+    PerThreadData &createPerThreadData(EJobThreadType threadType, u32 threadIdx) noexcept;
+    void deletePerThreadData(PerThreadData *tlData) noexcept;
 
     u32 calculateWorkersCount() const noexcept;
 
@@ -358,8 +400,9 @@ private:
     template <u32 SpecialThreadIdx, EJobThreadType SpecialThreadType>
     void doSpecialThreadJobs() noexcept
     {
-        PerThreadData *tlData = &getOrCreatePerThreadData();
-        tlData->threadType = SpecialThreadType;
+        PerThreadData *tlData = &createPerThreadData(SpecialThreadType, SpecialThreadIdx);
+        COPAT_ASSERT(tlData->threadType == SpecialThreadType);
+
         while (true)
         {
             // Execute all tasks in Higher priority to lower priority order
@@ -391,7 +434,7 @@ private:
         }
         specialThreadsPool.onSpecialThreadExit();
 
-        CoPaTMemAlloc::memFree(tlData);
+        deletePerThreadData(tlData);
     }
 };
 
