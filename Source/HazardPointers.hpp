@@ -19,6 +19,7 @@
 #include <mutex>
 #include <chrono>
 #include <vector>
+#include <algorithm>
 
 COPAT_NS_INLINED
 namespace copat

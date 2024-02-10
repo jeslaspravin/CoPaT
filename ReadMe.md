@@ -1,15 +1,17 @@
 # **Co**operative **Pa**rallel **T**asking *(or)* **CoPaT**
+
 This is a C++ 20 cooperative multi-tasking library. I used coroutines to achieve cooperative multi-task.
 I developed this for and also use this as a task system in [Cranberry game engine].
 I decided to make this library available publically under an MIT license. I will try and merge any improvements or changes I implement when using this in my game engine.
 
 The best way to use this library is to copy the files in the *Source* directory and paste them into your code base. Then all you have to do is
+
 ```cpp
 void mainTick(void* userData);
 
 int main()
 {
-    copat::JobSystem js;
+    copat::JobSystem js(copat::EThreadingConstraint::NoConstraints, COPAT_TCHAR("JsName"));
     /**
      * Initializes jobsystem with worker threads, sets up the TLS and setup singleton instance for future access
      * mainTick is call back that gets executed every loop of main thread(I do not create new thread for main thread)
@@ -30,10 +32,13 @@ int main()
     js.shutdown();
 }
 ```
+
 The above code is all you need to run the job system. You can exit from `joinMain()` by calling `JobSystem::exitMain()`.
 
 ## Future Goals
+
 Right now the library is just a bunch of headers and TU files
+
 - Convert to CMake library project
 - Add unit test and cover all feature's basic use cases
 - Integrate github's CI pipeline
@@ -42,13 +47,17 @@ Right now the library is just a bunch of headers and TU files
 - Of course bug fixes :wink:
 
 ## External libraries used
+
 - [ConcurrencyFreaks] - Using modified version of [FAAArrayQueue.hpp](https://github.com/pramalhe/ConcurrencyFreaks/blob/master/CPP/queues/array/FAAArrayQueue.hpp) for MPMC(Multi Producer Multi Consumer) and MPSC(MP Single Consumer) queues used for job system. The algorithms are modified to suit my needs and embedded into this library's code. [License](https://github.com/pramalhe/ConcurrencyFreaks/blob/master/LICENSE)
 
 ## Compiler requirement
+
 Any C++ 20 standard-compliant compiler must be able to compile and run this library successfully.
 
 ## Platform support
+
 Due to some platform-specific codes, the Supported platform is limited to **Windows**. However, I have exposed the `PlatformThreadingFuncs` type overrideable so that you can hook your application's platform-specific code to be used in this library. You have to add `OVERRIDE_PLATFORMTHREADINGFUNCTIONS` define to your platform functions class/wrapper in `CoPatConfig.h` and define a few necessary functions(same as in `GenericThreadingFunctions`)
+
 ```cpp
 /**
  * Override PlatformThreadingFunctions.
@@ -57,25 +66,29 @@ Due to some platform-specific codes, the Supported platform is limited to **Wind
 ```
 
 ## Platform architecture support
+
 I have run a few test cases in the `x64` arch. However, It should be fine in `x86` as well. I am not sure about the `arm`
 (I do not have much knowledge of that architecture)
 
-# Usage
+## Usage
+
 ```cpp
 template <typename RetType, typename BasePromiseType, bool EnqAtInitialSuspend, EJobThreadType EnqueueInThread, EJobPriority Priority>
 class JobSystemTaskType;
 ```
+
 The above *Awaitable* type is the main coroutine return type for this job system.
 
 - `RetType` - What type will `co_await` on this object will return to awaiter
 - `BasePromiseType` - can take `JobSystemPromiseBase` or `JobSystemPromiseBaseMC`. Once this coroutine job reaches `final_suspend` all the awaiters awaiting this job will be resumed.
-    * `JobSystemPromiseBase` for jobs that can be awaited in only one other coroutine
-    * `JobSystemPromiseBaseMC` for jobs which can be awaited by more than one coroutines
+  - `JobSystemPromiseBase` for jobs that can be awaited in only one other coroutine
+  - `JobSystemPromiseBaseMC` for jobs which can be awaited by more than one coroutines
 - `EnqAtInitialSuspend` - As the name suggests. Jobs with this `true` will be enqueued to the job system automatically at `initial_suspend`, The thread to which it will be enqueued depends on the next enum `EnqueueInThread`. while `false` means this job will start executing in the current thread synchronously until it is manually switched in the middle.
 - `EnqueueInThread` - This value must be a valid enum of thread type to which the job must queue.
 - `Priority` - Specifies the priority of the job. Possible values are `Critical`, `Normal`, and `Low`
 
-### Example
+### Usage Example
+
 ```cpp
 // Do not queues the task to job system automatically
 copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ false, /*EnqueueInThread*/ EJobThreadType::WorkerThreads, /*Priority*/ Priority_Normal> noEnqJob();
@@ -88,6 +101,7 @@ copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ true, /*EnqueueInThread*/ 
 > *Note that calling this coroutine will always enqueue to the back of the queue even if the current thread is the same as the coroutine's enqueue thread! This could be used to defer some jobs in the same thread.*
 
 ## Switching job thread
+
 You can switch between threads in the middle of job manually using `template <EJobThreadType SwitchToThread> struct SwitchJobThreadAwaiter`
 
 > *Note that using `SwitchJobThreadAwaiter` will enqueue to the back of the queue even if the current thread is the same as switching to the thread! This could be used to defer some jobs in the same thread.*
@@ -106,8 +120,10 @@ copat::JobSystemEnqTask<EJobThreadType::WorkerThreads, Priority_Normal> testManu
 If you want to delay the execution of a job within the same thread but you are not aware of the currently running thread, you can use YieldAwaiter to defer this job and allow other jobs to run.
 
 ## Thread wait on a job
+
 You can lock wait on a single job/awaitable using `copat::waitOnAwaitable(awaitable)`. Be aware that if you wait on a job that is already queued in the same thread it will lead to dead-lock.
 The thread that calls this will wait until the job is finished.
+
 ```cpp
 copat::JobSystemReturnableTask<u32&, true, EJobThreadType::WorkerThreads, Priority_Normal> testCoroWait();
 copat::JobSystemEnqTask<EJobThreadType::WorkerThreads, Priority_Normal> testCoroWaitNoRet();
@@ -121,13 +137,15 @@ copat::waitOnAwaitable(noretJob);
 ```
 
 ## Job wait until all awaitables
+
 This is a non-locking alternative for `copat::waitOnAwaitable(awaitable)`. So what this basically does is just suspend the waiting job and waits until awaiting job is done. This can be done in two ways
 
 - Job to Job await - Awaitable returned from a job can be `co_await`ed on another job. This suspends the second job until the first job is completed.
 Once the first job is finished the second job resumes in the same thread as awaited job
 - Multiple jobs to job await - Awaitable returned from several jobs can be piped through `copat::awaitAllTasks(...)` to create new awaitable which then can be awaited in another job to wait until all the jobs that it awaits on are finished.
 
-### Example
+### Job wait Example
+
 ```cpp
 copat::JobSystemReturnableTask<u32&, true, EJobThreadType::WorkerThreads, Priority_Normal> testCoroWait();
 copat::JobSystemEnqTask<EJobThreadType::WorkerThreads, Priority_Normal> testCoroWaitNoRet();
@@ -173,9 +191,11 @@ copat::NormalFuncAwaiter testRetCoroCall()
 ```
 
 ## Dispatching parallel tasks to workers
+
 The `dispatch()` function can be used to dispatch a job on an `n` number of data.
 
-### Example
+### Dispatch Example
+
 ```cpp
 copat::NormalFuncAwaiter testDispatch()
 {
@@ -188,7 +208,9 @@ copat::NormalFuncAwaiter testDispatch()
 ```
 
 `diverge()` and `converge()` functions can be used to dispatch a returnable job on an `n` number of data. The `converge` collects all the returned values and returns them.
-### Example
+
+### Diverge Example
+
 ```cpp
     auto loadAssetsAsync = [](u32 idx) -> AssetBase *
     {
@@ -201,8 +223,11 @@ copat::NormalFuncAwaiter testDispatch()
     );
     std::vector<AssetBase *> loadedAssetsPerFile = copat::converge(std::move(allAwaits));
 ```
+
 If you are going to use `dispatch()` or `diverge()` followed by a `waitOnAwaitable()` or `converge()`, Then it is best to use `parallelFor()` or `parallelForReturn()` respectively.
-### Example
+
+### Parallel for Example
+
 ```cpp
     auto loadAssetsAsync = [](u32 idx) -> AssetBase *
     {
@@ -216,6 +241,7 @@ If you are going to use `dispatch()` or `diverge()` followed by a `waitOnAwaitab
 ```
 
 ## User defined threads
+
 Along with default main and worker threads, User can also add their own special threads by defining `FOR_EACH_UDTHREAD_TYPES_UNIQUE_FIRST_LAST(FirstMacroName, MacroName, LastMacroName)` with a list of special thread names enclosed inside `FirstMacroName()`, `MacroName()` and `LastMacroName()` depending on the position of the special thread in the list.
 
 ```cpp
@@ -236,13 +262,15 @@ Along with default main and worker threads, User can also add their own special 
 ```
 
 ## Enqueueing Coroutine Task to different Job system
+
 Now you can have any number of job instances and have tasks be enqueued to any of those job systems.
 All you have to do is pass the JobSystem reference(`JobSystem &`) to the coroutine and call that coroutine with the job system you want it to be enqueued to.
 
 > Note that `JobSystem::get()` still exists and Coroutine jobs that do not have `JobSystem & or JobSystem *` as the function's first parameter will use it to enqueue the job.
 The job system that gets initialized the very first time will be stored in JobSystem singleton. This decision is to allow a main job system(Which will be stored in the singleton) and some sub-job systems that will be used inside different subsystems.
 
-### Example
+### Enqueue to other job system Example
+
 ```cpp
 copat::copat::JobSystemWorkerThreadTask testThreadedTask(copat::JobSystem& jobSystem, u32 counter);
 
@@ -258,10 +286,12 @@ auto t2 = testThreadedTask(jsB, counter);
 ```
 
 ## Overriding JobPriority specified at coroutine return type
+
 CoPaT supports priority queues now. It is a simple implementation now, however, it is still useful.
 
 Similar to enqueuing jobs to different job systems, any coroutine's priority can be overridden by passing the priority as the `1st` or `2nd parameter` of the coroutine.
 Following coroutine signatures can be used to override priorities at runtime.
+
 ```cpp
 copat::JobSystemWorkerThreadTask testThreadedTask(copat::JobSystem& jobSystem, EJobPriority jobPriority, u32 counter);
 copat::JobSystemWorkerThreadTask testThreadedTask(EJobPriority jobPriority, u32 counter);
@@ -279,6 +309,7 @@ auto t3 = testThreadedTask(copat::Priority_Critical, counter);
 ```
 
 ## Controlling threading using ThreadConstraints
+
 JobSystem's threading model can be controlled coarsely using the `EThreadingConstraint` enum and passing it in the constructor of the JobSystem `JobSystem(u32 constraints)`
 
 > `EThreadingConstraint::SingleThreaded` will make the entire job system run in a single thread. Users should take extra precautions to avoid deadlocks when using `copat::waitOnAwaitable(Awaitable)`
@@ -289,18 +320,23 @@ JobSystem's threading model can be controlled coarsely using the `EThreadingCons
 The user should pass the following as constraints to JobSystem's constructor*
 
 ```cpp
-JobSystem js(EThreadingConstraint::NoConstraint | (EThreadingConstraint::BitMasksStart << (EThreadingConstraint::NoRender - EThreadingConstraint::BitMasksStart)));
+JobSystem js(EThreadingConstraint::NoConstraint | (EThreadingConstraint::BitMasksStart << (EThreadingConstraint::NoRender - EThreadingConstraint::BitMasksStart)), COPAT_TCHAR("JsName"));
 ```
+
 or simply
+
 ```cpp
-JobSystem js(EThreadingConstraint::BitMasksStart << (EThreadingConstraint::NoRender - EThreadingConstraint::BitMasksStart));
+JobSystem js(EThreadingConstraint::BitMasksStart << (EThreadingConstraint::NoRender - EThreadingConstraint::BitMasksStart), COPAT_TCHAR("JsName"));
 ```
+
 or use macro
+
 ```cpp
-JobSystem js(NOSPECIALTHREAD_ENUM_TO_FLAGBIT(Render));
+JobSystem js(NOSPECIALTHREAD_ENUM_TO_FLAGBIT(Render), COPAT_TCHAR("JsName"));
 ```
 
 ## References
+
 - [cppcoro] - Wonderful library containing several useful codes for references
 - [1024cores.net] - Explains the lock-free programming very well also covers how false sharing(cache line collisions) between thread impacts performance.
 - [ConcurrencyFreaks] - Repository with some understandable but carefully written concurrent data structures
