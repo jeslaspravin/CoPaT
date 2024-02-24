@@ -94,7 +94,7 @@ public:
         std::coroutine_handle<> coro, EJobThreadType enqueueToThread, EJobPriority priority, SpecialQHazardToken *fromThreadTokens
     ) noexcept
     {
-        // We must not enqueue at shutdown
+        /* We must not enqueue at shutdown */
         COPAT_ASSERT(!allSpecialsExitEvent.try_wait());
         const u32 threadIdx = threadTypeToIdx(enqueueToThread);
         const u32 queueArrayIdx = pAndTTypeToIdx(threadIdx, priority);
@@ -109,11 +109,8 @@ public:
 
         specialJobEvents[threadIdx].notify();
     }
+    void *dequeueJob(u32 threadIdx, EJobPriority priority) noexcept { return getThreadJobsQueue(threadIdx, priority).dequeue(); }
 
-    SpecialThreadQueueType *getThreadJobsQueue(u32 threadIdx, EJobPriority priority) noexcept
-    {
-        return &specialQueues[pAndTTypeToIdx(threadIdx, priority)];
-    }
     void waitForJob(u32 threadIdx) noexcept { return specialJobEvents[threadIdx].wait(); }
     void onSpecialThreadExit() noexcept { allSpecialsExitEvent.count_down(); }
 
@@ -134,7 +131,7 @@ public:
             for (EJobPriority priority = Priority_Critical; priority < Priority_MaxPriority; priority = EJobPriority(priority + 1))
             {
                 new (tokens + pAndTTypeToIdx(threadIdx, priority))
-                    SpecialQHazardToken(getThreadJobsQueue(threadIdx, priority)->getHazardToken());
+                    SpecialQHazardToken(getThreadJobsQueue(threadIdx, priority).getHazardToken());
             }
         }
         return tokens;
@@ -145,6 +142,11 @@ private:
     static constexpr EJobThreadType idxToThreadType(u32 threadIdx) { return EJobThreadType(threadIdx + 1 + u32(EJobThreadType::MainThread)); }
     // Priority and thread type idx combined to get index in linear array
     static constexpr u32 pAndTTypeToIdx(u32 threadIdx, EJobPriority priority) { return threadIdx * Priority_MaxPriority + priority; }
+
+    SpecialThreadQueueType &getThreadJobsQueue(u32 threadIdx, EJobPriority priority) noexcept
+    {
+        return specialQueues[pAndTTypeToIdx(threadIdx, priority)];
+    }
 
     template <u32 Idx>
     void runSpecialThread() noexcept;
@@ -165,17 +167,16 @@ public:
     constexpr static const u32 COUNT = 0;
     constexpr static const TChar *NAMES[] = { COPAT_TCHAR("Dummy") };
 
-    void initialize(JobSystem *, SpecialThreadQueueType::QueueSharedContext &) {}
-    void run() {}
-    void shutdown() {}
+    void initialize(JobSystem *, SpecialThreadQueueType::QueueSharedContext &) noexcept {}
+    void run() noexcept {}
+    void shutdown() noexcept {}
 
-    void enqueueJob(std::coroutine_handle<>, EJobThreadType, EJobPriority, SpecialQHazardToken *) {}
+    void enqueueJob(std::coroutine_handle<>, EJobThreadType, EJobPriority, SpecialQHazardToken *) noexcept {}
 
-    SpecialThreadQueueType *getThreadJobsQueue(u32, EJobPriority) { return nullptr; }
-    void waitForJob(u32) {}
-    void onSpecialThreadExit() {}
+    void waitForJob(u32) noexcept {}
+    void onSpecialThreadExit() noexcept {}
 
-    SpecialQHazardToken *allocateEnqTokens() { return nullptr; }
+    SpecialQHazardToken *allocateEnqTokens() noexcept { return nullptr; }
 };
 
 /**
@@ -236,13 +237,57 @@ private:
     // Priority and thread type idx combined to get index in linear array
     static u32 pAndTTypeToIdx(u32 threadIdx, EJobPriority priority) { return threadIdx * Priority_MaxPriority + priority; }
 
-    WorkerThreadQueueType *getThreadJobsQueue(u32 workerIdx, EJobPriority priority) const noexcept
+    WorkerThreadQueueType &getThreadJobsQueue(u32 workerIdx, EJobPriority priority) const noexcept
     {
-        return &workerQs[pAndTTypeToIdx(workerIdx, priority)];
+        return workerQs[pAndTTypeToIdx(workerIdx, priority)];
     }
     u32 workerQsCount() const { return workersCount * Priority_MaxPriority; }
     /* One token per thread for each worker thread queues and the priorities */
     u32 hazardTokensCount() const;
+};
+
+/**
+ * Additional copat threads that do not belong to special or workers and needs individual control
+ */
+using INTERNAL_DoJobSystemThreadFuncType = void (JobSystem::*)(class JobSystemThread &);
+class JobSystemThread
+{
+public:
+    struct InitInfo
+    {
+        JobSystem *jobSystem;
+        SpecialThreadQueueType::QueueSharedContext &qSharedContent;
+        const TChar *threadName;
+        EJobThreadType threadType;
+    };
+
+public:
+    JobSystem *ownerJobSystem = nullptr;
+
+    /* It is okay to have as array as each queue will be aligned 2x the Cache line size */
+    SpecialThreadQueueType queues[Priority_MaxPriority];
+    JobReceivedEvent jobReceiveEvent;
+    /* Could just be std::atomic_flag */
+    std::latch exitEvent{ 1 };
+
+    const TChar *threadName;
+    EJobThreadType threadType;
+
+public:
+    void initialize(InitInfo info);
+    void run(INTERNAL_DoJobSystemThreadFuncType doThreadJob, bool bSetAffinity);
+    void shutdown();
+
+    void enqueueJob(std::coroutine_handle<> coro, EJobPriority priority, SpecialQHazardToken *fromThreadTokens) noexcept;
+    void *dequeueJob(EJobPriority priority) noexcept;
+
+    void waitForJob();
+    void onJobSytemThreadExit();
+
+    SpecialQHazardToken getEnqToken(EJobPriority priority);
+
+private:
+    SpecialThreadQueueType &getThreadJobsQueue(EJobPriority priority);
 };
 
 #define THREADCONSTRAINT_ENUM_TO_FLAGBIT(ConstraintName)                                                                                       \
@@ -275,11 +320,13 @@ public:
         EJobThreadType threadType;
         u32 threadIdx;
         SpecialQHazardToken mainQTokens[Priority_MaxPriority];
+        SpecialQHazardToken supervisorTokens[Priority_MaxPriority];
         WorkerQHazardToken *workerQsTokens;
         SpecialQHazardToken *specialQsTokens;
         void *tlUserData;
 
-        PerThreadData(SpecialThreadQueueType *mainQs, WorkerThreadsPool &workerThreadPool, SpecialThreadsPoolType &specialThreadPool);
+        /* Constructor is necessary as mainQTokens and supervisorTokens cannot be default constructed */
+        PerThreadData(SpecialThreadQueueType *mainQs, JobSystemThread &supervisorThread);
     };
 
 #define NOSPECIALTHREAD_ENUM(ThreadType) No##ThreadType,
@@ -299,6 +346,7 @@ public:
         // Flag if set worker threads will not be set to per logical processor affinity, instead use all processors in a group
         NoWorkerAffinity = BitMasksStart,
         NoJobStealing,
+        EnableSupervisor,
         // Each of below NoSpecialThread mask will not stop creating those threads but will be used only at Enqueue. This is just to avoid unnecessary complexity
         FOR_EACH_UDTHREAD_TYPES(NOSPECIALTHREAD_ENUM) 
         BitMasksEnd
@@ -331,6 +379,8 @@ private:
 
     WorkerThreadsPool workerThreadsPool;
     SpecialThreadsPoolType specialThreadsPool;
+
+    JobSystemThread supervisorThread;
 
     EJobThreadType enqIndirection[u32(EJobThreadType::MaxThreads)];
 
@@ -400,6 +450,7 @@ private:
 
     void runMain() noexcept;
     void doWorkerJobs(u32 threadIdx) noexcept;
+    void doJobSysThreadJobs(class JobSystemThread &jsThread) noexcept;
     /* Necessary to be friend to run special thread jobs */
     friend SpecialThreadsPoolType;
     template <u32 SpecialThreadIdx, EJobThreadType SpecialThreadType>
@@ -415,7 +466,7 @@ private:
             for (EJobPriority priority = Priority_Critical; priority < Priority_MaxPriority && coroPtr == nullptr;
                  priority = EJobPriority(priority + 1))
             {
-                coroPtr = specialThreadsPool.getThreadJobsQueue(SpecialThreadIdx, priority)->dequeue();
+                coroPtr = specialThreadsPool.dequeueJob(SpecialThreadIdx, priority);
             }
             while (coroPtr)
             {
@@ -426,7 +477,7 @@ private:
                 for (EJobPriority priority = Priority_Critical; priority < Priority_MaxPriority && coroPtr == nullptr;
                      priority = EJobPriority(priority + 1))
                 {
-                    coroPtr = specialThreadsPool.getThreadJobsQueue(SpecialThreadIdx, priority)->dequeue();
+                    coroPtr = specialThreadsPool.dequeueJob(SpecialThreadIdx, priority);
                 }
             }
 
