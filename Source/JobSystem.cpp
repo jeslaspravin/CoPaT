@@ -63,7 +63,7 @@ JobSystem::JobSystem(u32 inWorkerCount, u32 constraints, const TChar *jobSysName
     enqIndirection[u32(EJobThreadType::##ThreadType)]                                                                                          \
         = (threadingConstraints & NOSPECIALTHREAD_ENUM_TO_FLAGBIT(ThreadType)) ? EJobThreadType::MainThread : EJobThreadType::##ThreadType;
 
-void JobSystem::initialize(InitInterface &&initIxx, void *inUserData) noexcept
+void JobSystem::initialize(InitInterface initIxx, void *inUserData) noexcept
 {
     COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatInit"));
 
@@ -82,6 +82,7 @@ void JobSystem::initialize(InitInterface &&initIxx, void *inUserData) noexcept
     const bool bEnableWorkers = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoWorkerThreads);
 
     /* Setup common data */
+    userData = inUserData;
     mainThreadTick = std::move(initIxx.mainThreadTick);
     tlDataCreate = std::move(initIxx.createTlData);
     tlDataDelete = std::move(initIxx.deleteTlData);
@@ -119,7 +120,6 @@ void JobSystem::initialize(InitInterface &&initIxx, void *inUserData) noexcept
     }
 
     /* Setup main thread */
-    userData = inUserData;
     for (EJobPriority priority = Priority_Critical; priority < Priority_MaxPriority; priority = EJobPriority(priority + 1))
     {
         mainThreadJobs[priority].setupQueue(qSharedContext);

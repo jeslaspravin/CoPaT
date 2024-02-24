@@ -4,7 +4,7 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2023
+ *  Copyright (C) Jeslas Pravin, 2022-2024
  *  @jeslaspravin pravinjeslas@gmail.com
  *  License can be read in LICENSE file at this repository's root
  */
@@ -109,7 +109,7 @@ public:
     }
 
     FinalSuspendAwaiter final_suspend() noexcept { return {}; }
-    constexpr void unhandled_exception() const { COPAT_UNHANDLED_EXCEPT(); }
+    constexpr void unhandled_exception() const noexcept { COPAT_UNHANDLED_EXCEPT(); }
 };
 
 struct ContinuationEventChain
@@ -236,7 +236,7 @@ public:
     }
 
     FinalSuspendAwaiter final_suspend() noexcept { return {}; }
-    constexpr void unhandled_exception() const { COPAT_UNHANDLED_EXCEPT(); }
+    constexpr void unhandled_exception() const noexcept { COPAT_UNHANDLED_EXCEPT(); }
 };
 
 /**

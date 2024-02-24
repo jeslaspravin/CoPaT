@@ -56,6 +56,8 @@ struct DispatchWithReturn
 {
     using AwaitableType = DispatchAwaitableTypeWithRet<std::vector<RetType>>;
     using FuncType = DispatchFunctionTypeWithRet<RetType>;
+    /* Fundamental types used as reference and moving into result array is inefficient */
+    using RetTypeRef = std::conditional_t<std::is_fundamental_v<RetType>, RetType, RetType &>;
 
     // Just copying the callback so a copy exists inside dispatch
     static AwaitableType dispatchOneTask(JobSystem &jobSys, EJobPriority jobPriority, FuncType callback, u32 jobIdx) noexcept
@@ -168,6 +170,7 @@ std::vector<RetType> parallelForReturn(
 ) noexcept
 {
     using AwaitableType = typename DispatchWithReturn<RetType>::AwaitableType;
+    using RetTypeRef = typename DispatchWithReturn<RetType>::RetTypeRef;
     std::vector<RetType> retVals;
     if (count == 0)
     {
@@ -197,7 +200,7 @@ std::vector<RetType> parallelForReturn(
     }
 
     retVals = converge(std::move(allAwaits));
-    for (RetType &retVal : lastGrpRets)
+    for (RetTypeRef retVal : lastGrpRets)
     {
         retVals.emplace_back(std::move(retVal));
     }

@@ -40,6 +40,7 @@ struct alignas(2 * CACHE_LINE_SIZE) JobReceivedEvent
     void notify() noexcept
     {
         flag.test_and_set(std::memory_order::release);
+        /* Notifies on value change false -> true */
         flag.notify_one();
     }
 
@@ -117,7 +118,7 @@ public:
     void onSpecialThreadExit() noexcept { allSpecialsExitEvent.count_down(); }
 
     /**
-     * Allocates COUNT number of enqueue tokens, One for each special thread to be used for enqueuing job from threads for each priority
+     * Allocates COUNT number of enqueue tokens, One for each special thread to be used for en queuing job from any threads for each priority
      */
     SpecialQHazardToken *allocateEnqTokens() noexcept
     {
@@ -224,6 +225,10 @@ public:
     void waitForJob(u32 workerIdx) noexcept;
     void onWorkerThreadExit() noexcept;
 
+    /**
+     * Allocates workersCount number of enqueue tokens, One for each worker thread to be used for en queuing job from any threads for each
+     * priority
+     */
     WorkerQHazardToken *allocateEnqTokens() noexcept;
     u32 getWorkersCount() const { return workersCount; }
 
@@ -343,7 +348,7 @@ public:
 
     static JobSystem *get() noexcept { return singletonInstance; }
 
-    void initialize(InitInterface &&initIxx, void *inUserData) noexcept;
+    void initialize(InitInterface initIxx, void *inUserData) noexcept;
     /* Overload to match the previous initialize */
     void initialize(MainThreadTickFunc &&mainTickFunc, void *inUserData) noexcept
     {
