@@ -172,6 +172,7 @@ public:
     void shutdown() noexcept {}
 
     void enqueueJob(std::coroutine_handle<>, EJobThreadType, EJobPriority, SpecialQHazardToken *) noexcept {}
+    void *dequeueJob(u32, EJobPriority) noexcept { return nullptr; }
 
     void waitForJob(u32) noexcept {}
     void onSpecialThreadExit() noexcept {}

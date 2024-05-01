@@ -308,13 +308,13 @@ public:
 
     template <typename AnyType>
     CoroutineReturnStorage(AnyType &&value)
-        : returnValue(value)
+        : returnValue(std::forward<AnyType>(value))
     {}
 
     template <std::assignable_from<Type> AnyType>
     CoroutineReturnStorage &operator= (AnyType &&value)
     {
-        returnValue = value;
+        returnValue = std::forward<AnyType>(value);
         return *this;
     }
 

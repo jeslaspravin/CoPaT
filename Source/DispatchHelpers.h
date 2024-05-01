@@ -36,6 +36,10 @@ using DispatchFunctionTypeWithRet = FunctionType<RetType, u32>;
 using DispatchAwaitableType = DispatchAwaitableTypeWithRet<void>;
 using DispatchFunctionType = DispatchFunctionTypeWithRet<void>;
 
+template <typename RetType>
+using ConvergeAwaitable
+    = JobSystemTaskType<std::vector<RetType>, JobSystemPromiseBase, false, EJobThreadType::WorkerThreads, EJobPriority::Priority_Normal>;
+
 COPAT_EXPORT_SYM AwaitAllTasks<std::vector<DispatchAwaitableType>>
 dispatch(JobSystem *jobSys, const DispatchFunctionType &callback, u32 count, EJobPriority jobPriority = EJobPriority::Priority_Normal) noexcept;
 
@@ -62,7 +66,9 @@ struct DispatchWithReturn
     // Just copying the callback so a copy exists inside dispatch
     static AwaitableType dispatchOneTask(JobSystem &jobSys, EJobPriority jobPriority, FuncType callback, u32 jobIdx) noexcept
     {
-        std::vector<RetType> retVal{ callback(jobIdx) };
+        std::vector<RetType> retVal;
+        /* Not using initializer list constructor as it copies while emplace move constructs */
+        retVal.emplace_back(callback(jobIdx));
         co_return retVal;
     }
     static AwaitableType dispatchTaskGroup(JobSystem &jobSys, EJobPriority jobPriority, FuncType callback, u32 fromJobIdx, u32 count) noexcept
@@ -141,26 +147,53 @@ auto diverge(
     JobSystem *jobSys, const DispatchFunctionTypeWithRet<RetType> &callback, u32 count, EJobPriority jobPriority = EJobPriority::Priority_Normal
 ) noexcept
 {
+    using DispatcherType = DispatchWithReturn<RetType>;
     static_assert(
-        std::is_same_v<DispatchFunctionTypeWithRet<RetType>, typename DispatchWithReturn<RetType>::FuncType>,
+        std::is_same_v<DispatchFunctionTypeWithRet<RetType>, typename DispatcherType::FuncType>,
         "Type mismatch between dispatch and diverge functions"
     );
-    return DispatchWithReturn<RetType>::dispatch(jobSys, std::forward<decltype(callback)>(callback), count, jobPriority);
+    return DispatcherType::dispatch(jobSys, std::forward<decltype(callback)>(callback), count, jobPriority);
 }
 
 template <typename RetType>
 std::vector<RetType> converge(AwaitAllTasks<std::vector<DispatchAwaitableTypeWithRet<std::vector<RetType>>>> &&allAwaits) noexcept
 {
+    using DispatcherType = DispatchWithReturn<RetType>;
+    using RetTypeRef = typename DispatcherType::RetTypeRef;
     static_assert(
-        std::is_same_v<DispatchAwaitableTypeWithRet<std::vector<RetType>>, typename DispatchWithReturn<RetType>::AwaitableType>,
+        std::is_same_v<DispatchAwaitableTypeWithRet<std::vector<RetType>>, typename DispatcherType::AwaitableType>,
         "Type mismatch between dispatch and diverge functions"
     );
-    std::vector<RetType> retVal;
-    for (auto &awaitable : waitOnAwaitable(allAwaits))
+    std::vector<RetType> retVals;
+    for (const auto &awaitable : waitOnAwaitable(allAwaits))
     {
-        retVal.insert(retVal.end(), awaitable.getReturnValue().cbegin(), awaitable.getReturnValue().cend());
+        retVals.reserve(retVals.size() + awaitable.getReturnValue().size());
+        for (RetTypeRef retVal : awaitable.getReturnValue())
+        {
+            retVals.emplace_back(std::move(retVal));
+        }
     }
-    return retVal;
+    return retVals;
+}
+template <typename RetType>
+ConvergeAwaitable<RetType> awaitConverge(AwaitAllTasks<std::vector<DispatchAwaitableTypeWithRet<std::vector<RetType>>>> &&allAwaits) noexcept
+{
+    using DispatcherType = DispatchWithReturn<RetType>;
+    using RetTypeRef = typename DispatcherType::RetTypeRef;
+    static_assert(
+        std::is_same_v<DispatchAwaitableTypeWithRet<std::vector<RetType>>, typename DispatcherType::AwaitableType>,
+        "Type mismatch between dispatch and diverge functions"
+    );
+    std::vector<RetType> retVals;
+    for (const auto &awaitable : co_await allAwaits)
+    {
+        retVals.reserve(retVals.size() + awaitable.getReturnValue().size());
+        for (RetTypeRef retVal : awaitable.getReturnValue())
+        {
+            retVals.emplace_back(std::move(retVal));
+        }
+    }
+    co_return retVals;
 }
 
 // diverge, converge immediately and returns the result
@@ -169,8 +202,9 @@ std::vector<RetType> parallelForReturn(
     JobSystem *jobSys, const DispatchFunctionTypeWithRet<RetType> &callback, u32 count, EJobPriority jobPriority = EJobPriority::Priority_Normal
 ) noexcept
 {
-    using AwaitableType = typename DispatchWithReturn<RetType>::AwaitableType;
-    using RetTypeRef = typename DispatchWithReturn<RetType>::RetTypeRef;
+    using DispatcherType = DispatchWithReturn<RetType>;
+    using AwaitableType = typename DispatcherType::AwaitableType;
+    using RetTypeRef = typename DispatcherType::RetTypeRef;
     std::vector<RetType> retVals;
     if (count == 0)
     {
