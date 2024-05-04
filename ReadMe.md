@@ -226,7 +226,7 @@ copat::NormalFuncAwaiter testDispatch()
 
 If you are going to use `dispatch()` or `diverge()` followed by a `waitOnAwaitable()` or `converge()`, Then it is best to use `parallelFor()` or `parallelForReturn()` respectively.
 
-#### Diverge inside diverge
+### Diverge inside diverge
 
 This can be done by returning an awaitable from the outer diverge. The outer diverge could be a `copat::JobSystemReturnableTask<RetType, true, copat::EJobThreadType::WorkerThreads, copat::EJobPriority::Priority_Normal>`.
 
@@ -254,8 +254,7 @@ auto outerAwaitables = copat::diverge(
 std::vector<std::vector<Something>> allData = copat::waitOnAwaitable(std::move(copat::converge(std::move(shaderAwaitables))));
 ```
 
-Practical example can be found at 
-<script src="https://gist.github.com/jeslaspravin/1b306f6b4281c6c6eb17379a91ba7a86.js"></script>
+Practical example can be found at [Chaining Diverge and Converge]
 
 ### Parallel for Example
 
@@ -377,3 +376,4 @@ JobSystem js(NOSPECIALTHREAD_ENUM_TO_FLAGBIT(Render), COPAT_TCHAR("JsName"));
 [cppcoro]: https://github.com/lewissbaker/cppcoro
 [1024cores.net]: https://www.1024cores.net/home/lock-free-algorithms/introduction
 [ConcurrencyFreaks]: https://github.com/pramalhe/ConcurrencyFreaks
+[Chaining Diverge and Converge]: https://gist.github.com/jeslaspravin/1b306f6b4281c6c6eb17379a91ba7a86
