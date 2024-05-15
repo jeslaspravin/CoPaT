@@ -88,7 +88,8 @@ private:
 public:
     void initialize(JobSystem *jobSystem, SpecialThreadQueueType::QueueSharedContext &qSharedContext) noexcept;
     void run() noexcept;
-    void shutdown() noexcept;
+    /* To not dead lock at shutdown, Check JobSystem::shutdown for more details */
+    [[nodiscard]] bool tryShutdown() noexcept;
 
     void enqueueJob(
         std::coroutine_handle<> coro, EJobThreadType enqueueToThread, EJobPriority priority, SpecialQHazardToken *fromThreadTokens
@@ -169,7 +170,7 @@ public:
 
     void initialize(JobSystem *, SpecialThreadQueueType::QueueSharedContext &) noexcept {}
     void run() noexcept {}
-    void shutdown() noexcept {}
+    [[nodiscard]] bool tryShutdown() noexcept { return true; }
 
     void enqueueJob(std::coroutine_handle<>, EJobThreadType, EJobPriority, SpecialQHazardToken *) noexcept {}
     void *dequeueJob(u32, EJobPriority) noexcept { return nullptr; }
@@ -218,7 +219,8 @@ public:
 
     void initialize(JobSystem *jobSystem, WorkerThreadQueueType::QueueSharedContext &qSharedContext) noexcept;
     void run(INTERNAL_DoWorkerThreadFuncType doWorkerJobFunc, bool bSetAffinity) noexcept;
-    void shutdown() noexcept;
+    /* To not dead lock at shutdown, Check JobSystem::shutdown for more details */
+    [[nodiscard]] bool tryShutdown() noexcept;
 
     void enqueueJob(std::coroutine_handle<> coro, EJobPriority priority, WorkerQHazardToken *fromThreadTokens) noexcept;
     void *dequeueJob(u32 threadIdx, EJobPriority priority, WorkerQHazardToken *fromThreadTokens) noexcept;
@@ -277,7 +279,8 @@ public:
 public:
     void initialize(InitInfo info);
     void run(INTERNAL_DoJobSystemThreadFuncType doThreadJob, bool bSetAffinity);
-    void shutdown();
+    /* To not dead lock at shutdown, Check JobSystem::shutdown for more details */
+    [[nodiscard]] bool tryShutdown() noexcept;
 
     void enqueueJob(std::coroutine_handle<> coro, EJobPriority priority, SpecialQHazardToken *fromThreadTokens) noexcept;
     void *dequeueJob(EJobPriority priority) noexcept;
@@ -424,7 +427,7 @@ public:
         }
         return EJobThreadType::MaxThreads;
     }
-    EJobThreadType enqToThreadType(EJobThreadType forThreadType) const { return EJobThreadType(enqIndirection[u32(forThreadType)]); }
+    EJobThreadType enqToThreadType(EJobThreadType forThreadType) const { return enqIndirection[u32(forThreadType)]; }
     bool isInThread(EJobThreadType threadType) const { return getCurrentThreadType() == enqToThreadType(threadType); }
     void *getTlUserData() const
     {
@@ -527,15 +530,19 @@ void copat::SpecialThreadsPool<SpecialThreadsCount>::run() noexcept
 }
 
 template <u32 SpecialThreadsCount>
-void SpecialThreadsPool<SpecialThreadsCount>::shutdown() noexcept
+bool SpecialThreadsPool<SpecialThreadsCount>::tryShutdown() noexcept
 {
     COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatSpecialThreadsShutdown"));
     for (u32 i = 0; i < COUNT; ++i)
     {
         specialJobEvents[i].notify();
     }
-    allSpecialsExitEvent.wait();
-    tokensAllocator.release();
+    if (allSpecialsExitEvent.try_wait())
+    {
+        tokensAllocator.release();
+        return true;
+    }
+    return false;
 }
 
 template <u32 SpecialThreadsCount>

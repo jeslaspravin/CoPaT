@@ -162,9 +162,14 @@ void JobSystem::shutdown() noexcept
     COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatShutdown"));
 
     PerThreadData *mainThreadTlData = getPerThreadData();
-    COPAT_ASSERT(mainThreadTlData->threadType == EJobThreadType::MainThread);
+    COPAT_ASSERT(mainThreadTlData && mainThreadTlData->threadType == EJobThreadType::MainThread);
+    /* In order to prevent job en queuing back into one of the shutdown thread, redirect everything to main thread.
+     * Will be slow but would not crash. Needs repeated draining of main thread queue to avoid dead lock. */
+    std::fill(enqIndirection, enqIndirection + u32(EJobThreadType::MaxThreads), EJobThreadType::MainThread);
+    /* Clear main thread ticker, we do not want that getting called any more */
+    mainThreadTick = {};
 
-    // Just setting bExitMain flag to expected when shutting down
+    /* Just setting bExitMain flag to expected when shutting down */
     bExitMain[0].test_and_set(std::memory_order::relaxed);
     bExitMain[1].test_and_set(std::memory_order::release);
 
@@ -177,15 +182,27 @@ void JobSystem::shutdown() noexcept
 
     if (bEnableSpecials)
     {
-        specialThreadsPool.shutdown();
+        while (!specialThreadsPool.tryShutdown())
+        {
+            /* Maybe threads are waiting for jobs indirected to main thread */
+            runMain();
+        }
     }
     if (bEnableWorkers)
     {
-        workerThreadsPool.shutdown();
+        while (!workerThreadsPool.tryShutdown())
+        {
+            /* Maybe threads are waiting for jobs indirected to main thread */
+            runMain();
+        }
     }
     if (bEnableSupervisor)
     {
-        supervisorThread.shutdown();
+        while (!supervisorThread.tryShutdown())
+        {
+            /* Maybe threads are waiting for jobs indirected to main thread */
+            runMain();
+        }
     }
 
     deletePerThreadData(mainThreadTlData);
@@ -611,7 +628,7 @@ void WorkerThreadsPool::run(INTERNAL_DoWorkerThreadFuncType doWorkerJobFunc, boo
     }
 }
 
-void WorkerThreadsPool::shutdown() noexcept
+bool WorkerThreadsPool::tryShutdown() noexcept
 {
     COPAT_ASSERT(workersCount != 0);
     COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatSpecialThreadsShutdown"));
@@ -620,7 +637,10 @@ void WorkerThreadsPool::shutdown() noexcept
     {
         workerJobEvents[i].notify();
     }
-    allWorkersExitEvent.wait();
+    if (!allWorkersExitEvent.try_wait())
+    {
+        return false;
+    }
 
     /* Only queues needs to be manually destructed */
     for (u32 i = 0; i < workerQsCount(); ++i)
@@ -633,6 +653,8 @@ void WorkerThreadsPool::shutdown() noexcept
     workerAllocations = nullptr;
     workerJobEvents = nullptr;
     workerQs = nullptr;
+
+    return true;
 }
 
 void WorkerThreadsPool::enqueueJob(std::coroutine_handle<> coro, EJobPriority priority, WorkerQHazardToken *fromThreadTokens) noexcept
@@ -737,12 +759,12 @@ void JobSystemThread::run(INTERNAL_DoJobSystemThreadFuncType doThreadJob, bool b
     /* Destroy when finishes */
     jsThread.detach();
 }
-void JobSystemThread::shutdown()
+bool JobSystemThread::tryShutdown() noexcept
 {
     COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatJobSysThreadShutdown"));
 
     jobReceiveEvent.notify();
-    exitEvent.wait();
+    return exitEvent.try_wait();
 }
 
 void JobSystemThread::enqueueJob(std::coroutine_handle<> coro, EJobPriority priority, SpecialQHazardToken *fromThreadTokens) noexcept
