@@ -427,6 +427,16 @@ public:
         }
         return EJobThreadType::MaxThreads;
     }
+    /* Will return non zero index only for workers, for others always returns 0 */
+    u32 getCurrentThreadIdx() const noexcept
+    {
+
+        if (PerThreadData *tlData = getPerThreadData())
+        {
+            return tlData->threadType == EJobThreadType::WorkerThreads ? tlData->threadIdx : 0u;
+        }
+        return 0u;
+    }
     EJobThreadType enqToThreadType(EJobThreadType forThreadType) const { return enqIndirection[u32(forThreadType)]; }
     bool isInThread(EJobThreadType threadType) const { return getCurrentThreadType() == enqToThreadType(threadType); }
     void *getTlUserData() const
