@@ -109,7 +109,7 @@ public:
     }
 
     FinalSuspendAwaiter final_suspend() noexcept { return {}; }
-    constexpr void unhandled_exception() const noexcept { COPAT_UNHANDLED_EXCEPT(); }
+    void unhandled_exception() const noexcept { COPAT_UNHANDLED_EXCEPT(); }
 };
 
 struct ContinuationEventChain
@@ -236,7 +236,7 @@ public:
     }
 
     FinalSuspendAwaiter final_suspend() noexcept { return {}; }
-    constexpr void unhandled_exception() const noexcept { COPAT_UNHANDLED_EXCEPT(); }
+    void unhandled_exception() const noexcept { COPAT_UNHANDLED_EXCEPT(); }
 };
 
 /**
@@ -302,6 +302,10 @@ public:
         /**
          * User provided JobSystem. First argument of coroutine function must be JobSystem & or JobSystem *
          */
+        PromiseType()
+            : BasePromiseType(JobSystem::get(), Priority)
+        {}
+        /* For static functions */
         PromiseType(JobSystem &jobSystem, auto...)
             : BasePromiseType(&jobSystem, Priority)
         {}
@@ -317,8 +321,21 @@ public:
         PromiseType(EJobPriority priority, auto...)
             : BasePromiseType(JobSystem::get(), priority)
         {}
-        PromiseType()
-            : BasePromiseType(JobSystem::get(), Priority)
+        /* For member functions */
+        PromiseType(auto &, JobSystem &jobSystem, auto...)
+            : BasePromiseType(&jobSystem, Priority)
+        {}
+        PromiseType(auto &, JobSystem *jobSystem, auto...)
+            : BasePromiseType(jobSystem, Priority)
+        {}
+        PromiseType(auto &, JobSystem &jobSystem, EJobPriority priority, auto...)
+            : BasePromiseType(&jobSystem, priority)
+        {}
+        PromiseType(auto &, JobSystem *jobSystem, EJobPriority priority, auto...)
+            : BasePromiseType(jobSystem, priority)
+        {}
+        PromiseType(auto &, EJobPriority priority, auto...)
+            : BasePromiseType(JobSystem::get(), priority)
         {}
 
         JobSystemTaskType get_return_object() noexcept { return JobSystemTaskType{ std::coroutine_handle<PromiseType>::from_promise(*this) }; }
@@ -415,6 +432,10 @@ public:
         /**
          * User provided JobSystem. First argument of coroutine function must be JobSystem & or JobSystem *
          */
+        PromiseType()
+            : BasePromiseType(JobSystem::get(), Priority)
+        {}
+        /* For static functions */
         PromiseType(JobSystem &jobSystem, auto...)
             : BasePromiseType(&jobSystem, Priority)
         {}
@@ -430,8 +451,21 @@ public:
         PromiseType(EJobPriority priority, auto...)
             : BasePromiseType(JobSystem::get(), priority)
         {}
-        PromiseType()
-            : BasePromiseType(JobSystem::get(), Priority)
+        /* For member functions */
+        PromiseType(auto &, JobSystem &jobSystem, auto...)
+            : BasePromiseType(&jobSystem, Priority)
+        {}
+        PromiseType(auto &, JobSystem *jobSystem, auto...)
+            : BasePromiseType(jobSystem, Priority)
+        {}
+        PromiseType(auto &, JobSystem &jobSystem, EJobPriority priority, auto...)
+            : BasePromiseType(&jobSystem, priority)
+        {}
+        PromiseType(auto &, JobSystem *jobSystem, EJobPriority priority, auto...)
+            : BasePromiseType(jobSystem, priority)
+        {}
+        PromiseType(auto &, EJobPriority priority, auto...)
+            : BasePromiseType(JobSystem::get(), priority)
         {}
 
         JobSystemTaskType get_return_object() noexcept { return JobSystemTaskType{ std::coroutine_handle<PromiseType>::from_promise(*this) }; }
@@ -504,6 +538,10 @@ public:
         /**
          * User provided JobSystem. First argument of coroutine function must be JobSystem & or JobSystem *
          */
+        PromiseType()
+            : BasePromiseType(JobSystem::get(), Priority)
+        {}
+        /* For static functions */
         PromiseType(JobSystem &jobSystem, auto...)
             : BasePromiseType(&jobSystem, Priority)
         {}
@@ -519,8 +557,21 @@ public:
         PromiseType(EJobPriority priority, auto...)
             : BasePromiseType(JobSystem::get(), priority)
         {}
-        PromiseType()
-            : BasePromiseType(JobSystem::get(), Priority)
+        /* For member functions */
+        PromiseType(auto &, JobSystem &jobSystem, auto...)
+            : BasePromiseType(&jobSystem, Priority)
+        {}
+        PromiseType(auto &, JobSystem *jobSystem, auto...)
+            : BasePromiseType(jobSystem, Priority)
+        {}
+        PromiseType(auto &, JobSystem &jobSystem, EJobPriority priority, auto...)
+            : BasePromiseType(&jobSystem, priority)
+        {}
+        PromiseType(auto &, JobSystem *jobSystem, EJobPriority priority, auto...)
+            : BasePromiseType(jobSystem, priority)
+        {}
+        PromiseType(auto &, EJobPriority priority, auto...)
+            : BasePromiseType(JobSystem::get(), priority)
         {}
 
         JobSystemShareableTaskType get_return_object() noexcept
@@ -599,6 +650,10 @@ public:
         /**
          * User provided JobSystem. First argument of coroutine function must be JobSystem & or JobSystem *
          */
+        PromiseType()
+            : BasePromiseType(JobSystem::get(), Priority)
+        {}
+        /* For static functions */
         PromiseType(JobSystem &jobSystem, auto...)
             : BasePromiseType(&jobSystem, Priority)
         {}
@@ -614,8 +669,21 @@ public:
         PromiseType(EJobPriority priority, auto...)
             : BasePromiseType(JobSystem::get(), priority)
         {}
-        PromiseType()
-            : BasePromiseType(JobSystem::get(), Priority)
+        /* For member functions */
+        PromiseType(auto &, JobSystem &jobSystem, auto...)
+            : BasePromiseType(&jobSystem, Priority)
+        {}
+        PromiseType(auto &, JobSystem *jobSystem, auto...)
+            : BasePromiseType(jobSystem, Priority)
+        {}
+        PromiseType(auto &, JobSystem &jobSystem, EJobPriority priority, auto...)
+            : BasePromiseType(&jobSystem, priority)
+        {}
+        PromiseType(auto &, JobSystem *jobSystem, EJobPriority priority, auto...)
+            : BasePromiseType(jobSystem, priority)
+        {}
+        PromiseType(auto &, EJobPriority priority, auto...)
+            : BasePromiseType(JobSystem::get(), priority)
         {}
 
         JobSystemShareableTaskType get_return_object() noexcept
