@@ -249,14 +249,14 @@ public:
 
     constexpr bool await_ready() const noexcept { return false; }
     template <JobSystemPromiseType PromiseType>
-    void await_suspend(std::coroutine_handle<PromiseType> h) const noexcept
+    void await_suspend(std::coroutine_handle<PromiseType> h, std::source_location srcLoc = std::source_location::current()) const noexcept
     {
-        enqueueToJs(h, h.promise().jobPriority);
+        enqueueToJs(h, h.promise().jobPriority, srcLoc);
     }
     constexpr void await_resume() const noexcept {}
 
 private:
-    COPAT_EXPORT_SYM void enqueueToJs(std::coroutine_handle<> h, EJobPriority priority) const noexcept;
+    COPAT_EXPORT_SYM void enqueueToJs(std::coroutine_handle<> h, EJobPriority priority, std::source_location srcLoc) const noexcept;
 };
 
 /**

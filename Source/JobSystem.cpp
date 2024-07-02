@@ -216,13 +216,48 @@ void JobSystem::shutdown() noexcept
 
 void JobSystem::enqueueJob(
     std::coroutine_handle<> coro, EJobThreadType enqueueToThread /*= EJobThreadType::WorkerThreads*/,
-    EJobPriority priority /*= EJobPriority::Priority_Normal*/
+    EJobPriority priority /*= EJobPriority::Priority_Normal*/, std::source_location src
 ) noexcept
 {
     PerThreadData *threadData = getPerThreadData();
-    enqueueToThread = enqToThreadType(enqueueToThread);
+    const EJobThreadType redirThread = enqToThreadType(enqueueToThread);
 
-    switch (enqueueToThread)
+#if COPAT_DEBUG_JOBS
+    if (threadData)
+    {
+        pushNextEnq({
+            .fromThreadIdx = threadData->threadIdx,
+            .fromThreadType = threadData->threadType,
+            .fromJobSys = this,
+            .toThreadType = enqueueToThread,
+            .redirThreadType = redirThread,
+            .toJobSys = this,
+            .jobHndl = coro.address(),
+            .parentJobHndl = threadData->currentJobHndl,
+            .enqAtSrc = src,
+        });
+    }
+    else
+    {
+        JobSystem *tlJs = dumpTlJobSysPtr();
+        PerThreadData *tlData = tlJs ? tlJs->getPerThreadData() : nullptr;
+        pushNextEnq({
+            .fromThreadIdx = tlData ? tlData->threadIdx : 0,
+            .fromThreadType = tlData ? tlData->threadType : EJobThreadType::MaxThreads,
+            .fromJobSys = tlJs,
+            .toThreadType = enqueueToThread,
+            .redirThreadType = redirThread,
+            .toJobSys = this,
+            .jobHndl = coro.address(),
+            .parentJobHndl = tlData ? tlData->currentJobHndl : nullptr,
+            .enqAtSrc = src,
+        });
+    }
+#else
+    (src);
+#endif
+
+    switch (redirThread)
     {
     case copat::EJobThreadType::MainThread:
     {
@@ -277,11 +312,11 @@ void JobSystem::enqueueJob(
         {
             // Special thread queue token must not be null in this case
             COPAT_ASSERT(threadData->specialQsTokens);
-            specialThreadsPool.enqueueJob(coro, enqueueToThread, priority, threadData->specialQsTokens);
+            specialThreadsPool.enqueueJob(coro, redirThread, priority, threadData->specialQsTokens);
         }
         else
         {
-            specialThreadsPool.enqueueJob(coro, enqueueToThread, priority, nullptr);
+            specialThreadsPool.enqueueJob(coro, redirThread, priority, nullptr);
         }
         break;
     }
@@ -299,6 +334,9 @@ JobSystem::PerThreadData::PerThreadData(SpecialThreadQueueType *mainQs, JobSyste
     , tlUserData(nullptr)
 {}
 
+#if COPAT_DEBUG_JOBS
+thread_local JobSystem *tl_DUMP_JOBSYSTEM_PTR = nullptr;
+#endif
 copat::JobSystem::PerThreadData &JobSystem::createPerThreadData(EJobThreadType threadType, u32 threadIdx) noexcept
 {
     PerThreadData *threadData = (PerThreadData *)PlatformThreadingFuncs::getTlsSlotValue(tlsSlot);
@@ -310,6 +348,10 @@ copat::JobSystem::PerThreadData &JobSystem::createPerThreadData(EJobThreadType t
     newThreadData->workerQsTokens = workerThreadsPool.allocateEnqTokens();
     newThreadData->specialQsTokens = specialThreadsPool.allocateEnqTokens();
     newThreadData->tlUserData = tlDataCreate ? tlDataCreate(userData, threadType, threadIdx) : nullptr;
+
+#if COPAT_DEBUG_JOBS
+    tl_DUMP_JOBSYSTEM_PTR = this;
+#endif
 
     PlatformThreadingFuncs::setTlsSlotValue(tlsSlot, newThreadData);
     threadData = (PerThreadData *)PlatformThreadingFuncs::getTlsSlotValue(tlsSlot);
@@ -351,6 +393,18 @@ void JobSystem::runMain() noexcept
         while (coroPtr)
         {
             COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatMainJob"));
+#if COPAT_DEBUG_JOBS
+            pushNextDeq({
+                .fromThreadIdx = 0,
+                .execThreadIdx = 0,
+                .threadType = EJobThreadType::MainThread,
+                .jobHndl = coroPtr,
+                .jobSys = this,
+            });
+            tlData->currentJobHndl = coroPtr;
+#endif
+
+            /* Resume job/task */
             std::coroutine_handle<>::from_address(coroPtr).resume();
 
             coroPtr = nullptr;
@@ -360,6 +414,9 @@ void JobSystem::runMain() noexcept
                 coroPtr = mainThreadJobs[priority].dequeue();
             }
         }
+#if COPAT_DEBUG_JOBS
+        tlData->currentJobHndl = nullptr;
+#endif
 
         if (bExitMain[0].test(std::memory_order::relaxed))
         {
@@ -401,6 +458,17 @@ void JobSystem::doWorkerJobs(u32 threadIdx) noexcept
             while (coroPtr)
             {
                 COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatWorkerJob"));
+#if COPAT_DEBUG_JOBS
+                pushNextDeq({
+                    .fromThreadIdx = threadIdx,
+                    .execThreadIdx = threadIdx,
+                    .threadType = EJobThreadType::WorkerThreads,
+                    .jobHndl = coroPtr,
+                    .jobSys = this,
+                });
+                tlData->currentJobHndl = coroPtr;
+#endif
+                /* Resume job/task */
                 std::coroutine_handle<>::from_address(coroPtr).resume();
 
                 coroPtr = nullptr;
@@ -424,6 +492,17 @@ void JobSystem::doWorkerJobs(u32 threadIdx) noexcept
                 while (coroPtr)
                 {
                     COPAT_PROFILER_SCOPE_VALUE(COPAT_PROFILER_CHAR("CopatStolenJob"), stealFromThreadIdx);
+#if COPAT_DEBUG_JOBS
+                    pushNextDeq({
+                        .fromThreadIdx = stealFromThreadIdx,
+                        .execThreadIdx = threadIdx,
+                        .threadType = EJobThreadType::WorkerThreads,
+                        .jobHndl = coroPtr,
+                        .jobSys = this,
+                    });
+                    tlData->currentJobHndl = coroPtr;
+#endif
+                    /* Resume job/task */
                     std::coroutine_handle<>::from_address(coroPtr).resume();
 
                     coroPtr = nullptr;
@@ -435,6 +514,9 @@ void JobSystem::doWorkerJobs(u32 threadIdx) noexcept
                 }
             }
         }
+#if COPAT_DEBUG_JOBS
+        tlData->currentJobHndl = nullptr;
+#endif
 
         /* Wait for new job unless exiting */
         if (bExitMain[1].test(std::memory_order::relaxed))
@@ -464,6 +546,17 @@ void JobSystem::doJobSysThreadJobs(class JobSystemThread &jsThread) noexcept
         while (coroPtr)
         {
             COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatSpecialJob"));
+#if COPAT_DEBUG_JOBS
+            pushNextDeq({
+                .fromThreadIdx = 0,
+                .execThreadIdx = 0,
+                .threadType = jsThread.threadType,
+                .jobHndl = coroPtr,
+                .jobSys = this,
+            });
+            tlData->currentJobHndl = coroPtr;
+#endif
+            /* Resume job/task */
             std::coroutine_handle<>::from_address(coroPtr).resume();
 
             coroPtr = nullptr;
@@ -473,6 +566,9 @@ void JobSystem::doJobSysThreadJobs(class JobSystemThread &jsThread) noexcept
                 coroPtr = jsThread.dequeueJob(priority);
             }
         }
+#if COPAT_DEBUG_JOBS
+        tlData->currentJobHndl = nullptr;
+#endif
 
         if (bExitMain[1].test(std::memory_order::relaxed))
         {
@@ -791,3 +887,66 @@ SpecialQHazardToken JobSystemThread::getEnqToken(EJobPriority priority) { return
 SpecialThreadQueueType &JobSystemThread::getThreadJobsQueue(EJobPriority priority) { return queues[priority]; }
 
 } // namespace copat
+
+#if COPAT_DEBUG_JOBS
+namespace copat
+{
+void JobSystem::pushNextEnq(EnqueueDump &&dump)
+{
+    std::vector<EnqueueDump> eQDumps;
+    std::vector<DequeueDump> dQDumps;
+
+    dumpingMutex.lock();
+    enqDumpIdx++;
+    if (enqDumpIdx == MAX_ENQ_DEQ_DUMPS)
+    {
+        eQDumps = std::move(enQsDumpList);
+        dQDumps = std::move(dQsDumpList);
+
+        dQDumps.resize(dqDumpIdx + 1);
+
+        enQsDumpList.resize(MAX_ENQ_DEQ_DUMPS);
+        dQsDumpList.resize(MAX_ENQ_DEQ_DUMPS);
+        enqDumpIdx = dqDumpIdx = 0;
+    }
+    dumpingMutex.unlock();
+
+    if (!eQDumps.empty() || !dQDumps.empty())
+    {
+        COPAT_DEBUG_JOBS_DUMP(this, eQDumps.data(), eQDumps.size(), dQDumps.data(), dQDumps.size());
+    }
+
+    enQsDumpList[enqDumpIdx] = std::forward<EnqueueDump>(dump);
+}
+void JobSystem::pushNextDeq(DequeueDump &&dump)
+{
+    std::vector<EnqueueDump> eQDumps;
+    std::vector<DequeueDump> dQDumps;
+
+    dumpingMutex.lock();
+    dqDumpIdx++;
+    if (dqDumpIdx == MAX_ENQ_DEQ_DUMPS)
+    {
+        eQDumps = std::move(enQsDumpList);
+        dQDumps = std::move(dQsDumpList);
+
+        eQDumps.resize(enqDumpIdx + 1);
+
+        enQsDumpList.resize(MAX_ENQ_DEQ_DUMPS);
+        dQsDumpList.resize(MAX_ENQ_DEQ_DUMPS);
+        enqDumpIdx = dqDumpIdx = 0;
+    }
+    dumpingMutex.unlock();
+
+    if (!eQDumps.empty() || !dQDumps.empty())
+    {
+        COPAT_DEBUG_JOBS_DUMP(this, eQDumps.data(), eQDumps.size(), dQDumps.data(), dQDumps.size());
+    }
+
+    dQsDumpList[dqDumpIdx] = std::forward<DequeueDump>(dump);
+}
+
+JobSystem *JobSystem::dumpTlJobSysPtr() { return tl_DUMP_JOBSYSTEM_PTR; }
+
+} // namespace copat
+#endif

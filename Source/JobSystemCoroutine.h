@@ -34,10 +34,10 @@ public:
 
     constexpr bool await_ready() const noexcept { return false; }
     template <JobSystemPromiseType PromiseType>
-    void await_suspend(std::coroutine_handle<PromiseType> h) const noexcept
+    void await_suspend(std::coroutine_handle<PromiseType> h, std::source_location srcLoc = std::source_location::current()) const noexcept
     {
         COPAT_ASSERT(h.promise().enqToJobSystem);
-        h.promise().enqToJobSystem->enqueueJob(h, SwitchToThread, h.promise().jobPriority);
+        h.promise().enqToJobSystem->enqueueJob(h, SwitchToThread, h.promise().jobPriority, srcLoc);
     }
     constexpr void await_resume() const noexcept {}
 };
@@ -52,10 +52,10 @@ public:
 
     constexpr bool await_ready() const noexcept { return false; }
     template <JobSystemPromiseType PromiseType>
-    void await_suspend(std::coroutine_handle<PromiseType> h) const noexcept
+    void await_suspend(std::coroutine_handle<PromiseType> h, std::source_location srcLoc = std::source_location::current()) const noexcept
     {
         COPAT_ASSERT(h.promise().enqToJobSystem);
-        h.promise().enqToJobSystem->enqueueJob(h, h.promise().enqToJobSystem->getCurrentThreadType(), h.promise().jobPriority);
+        h.promise().enqToJobSystem->enqueueJob(h, h.promise().enqToJobSystem->getCurrentThreadType(), h.promise().jobPriority, srcLoc);
     }
     constexpr void await_resume() const noexcept {}
 };
@@ -339,12 +339,12 @@ public:
         {}
 
         JobSystemTaskType get_return_object() noexcept { return JobSystemTaskType{ std::coroutine_handle<PromiseType>::from_promise(*this) }; }
-        auto initial_suspend() noexcept
+        auto initial_suspend(std::source_location srcLoc = std::source_location::current()) noexcept
         {
             if constexpr (EnqAtInitialSuspend)
             {
                 COPAT_ASSERT(enqToJobSystem);
-                enqToJobSystem->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread, jobPriority);
+                enqToJobSystem->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread, jobPriority, srcLoc);
                 return std::suspend_always{};
             }
             else
@@ -469,12 +469,12 @@ public:
         {}
 
         JobSystemTaskType get_return_object() noexcept { return JobSystemTaskType{ std::coroutine_handle<PromiseType>::from_promise(*this) }; }
-        auto initial_suspend() noexcept
+        auto initial_suspend(std::source_location srcLoc = std::source_location::current()) noexcept
         {
             if constexpr (EnqAtInitialSuspend)
             {
                 COPAT_ASSERT(enqToJobSystem);
-                enqToJobSystem->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread, jobPriority);
+                enqToJobSystem->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread, jobPriority, srcLoc);
                 return std::suspend_always{};
             }
             else
@@ -578,12 +578,12 @@ public:
         {
             return JobSystemShareableTaskType{ std::coroutine_handle<PromiseType>::from_promise(*this) };
         }
-        auto initial_suspend() noexcept
+        auto initial_suspend(std::source_location srcLoc = std::source_location::current()) noexcept
         {
             if constexpr (EnqAtInitialSuspend)
             {
                 COPAT_ASSERT(enqToJobSystem);
-                enqToJobSystem->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread, jobPriority);
+                enqToJobSystem->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread, jobPriority, srcLoc);
                 return std::suspend_always{};
             }
             else
@@ -690,12 +690,12 @@ public:
         {
             return JobSystemShareableTaskType{ std::coroutine_handle<PromiseType>::from_promise(*this) };
         }
-        auto initial_suspend() noexcept
+        auto initial_suspend(std::source_location srcLoc = std::source_location::current()) noexcept
         {
             if constexpr (EnqAtInitialSuspend)
             {
                 COPAT_ASSERT(enqToJobSystem);
-                enqToJobSystem->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread, jobPriority);
+                enqToJobSystem->enqueueJob(std::coroutine_handle<PromiseType>::from_promise(*this), EnqueueInThread, jobPriority, srcLoc);
                 return std::suspend_always{};
             }
             else

@@ -13,6 +13,7 @@
 
 #include "CoPaTConfig.h"
 
+#include <source_location>
 #ifndef OVERRIDE_MEMORY_ALLOCATOR
 #include <cstdlib>
 #include <type_traits>
@@ -131,5 +132,39 @@ void memDelete(T *ptr) noexcept
     ptr->~T();
     CoPaTMemAlloc::memFree(ptr);
 }
+
+//////////////////////////////////////////////////////////////////////////
+/// Copat Debugs
+//////////////////////////////////////////////////////////////////////////
+
+#if COPAT_DEBUG_JOBS
+
+struct alignas(2 * CACHE_LINE_SIZE) EnqueueDump
+{
+    u32 fromThreadIdx;
+    EJobThreadType fromThreadType;
+    JobSystem *fromJobSys;
+    EJobThreadType toThreadType;
+    EJobThreadType redirThreadType;
+    JobSystem *toJobSys;
+    void *jobHndl;
+    /* Job handle from which this job was enqueued */
+    void *parentJobHndl;
+    std::source_location enqAtSrc;
+};
+struct alignas(2 * CACHE_LINE_SIZE) DequeueDump
+{
+    /* Thread index from whose queue this job was stolen(Chances to be different for workers) */
+    u32 fromThreadIdx;
+    /* Executing thread */
+    u32 execThreadIdx;
+    /* Executing thread type */
+    EJobThreadType threadType;
+    /* Coroutine pointer */
+    void *jobHndl;
+    JobSystem *jobSys;
+};
+
+#endif
 
 } // namespace copat

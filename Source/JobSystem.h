@@ -328,6 +328,9 @@ public:
         WorkerQHazardToken *workerQsTokens;
         SpecialQHazardToken *specialQsTokens;
         void *tlUserData;
+#if COPAT_DEBUG_JOBS
+        void *currentJobHndl = nullptr;
+#endif
 
         /* Constructor is necessary as mainQTokens and supervisorTokens cannot be default constructed */
         PerThreadData(SpecialThreadQueueType *mainQs, JobSystemThread &supervisorThread);
@@ -416,7 +419,7 @@ public:
 
     void enqueueJob(
         std::coroutine_handle<> coro, EJobThreadType enqueueToThread = EJobThreadType::WorkerThreads,
-        EJobPriority priority = EJobPriority::Priority_Normal
+        EJobPriority priority = EJobPriority::Priority_Normal, std::source_location src = std::source_location::current()
     ) noexcept;
 
     EJobThreadType getCurrentThreadType() const noexcept
@@ -485,6 +488,17 @@ private:
             while (coroPtr)
             {
                 COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatSpecialJob"));
+#if COPAT_DEBUG_JOBS
+                pushNextDeq({
+                    .fromThreadIdx = SpecialThreadIdx,
+                    .execThreadIdx = SpecialThreadIdx,
+                    .threadType = SpecialThreadType,
+                    .jobHndl = coroPtr,
+                    .jobSys = this,
+                });
+                tlData->currentJobHndl = coroPtr;
+#endif
+                /* Resume job/task */
                 std::coroutine_handle<>::from_address(coroPtr).resume();
 
                 coroPtr = nullptr;
@@ -494,6 +508,9 @@ private:
                     coroPtr = specialThreadsPool.dequeueJob(SpecialThreadIdx, priority);
                 }
             }
+#if COPAT_DEBUG_JOBS
+            tlData->currentJobHndl = nullptr;
+#endif
 
             if (bExitMain[1].test(std::memory_order::relaxed))
             {
@@ -506,6 +523,22 @@ private:
 
         deletePerThreadData(tlData);
     }
+
+private:
+    /* Dumping codes */
+#if COPAT_DEBUG_JOBS
+    /* Assuming 128 threads en/dequeuing 256 jobs for a frame/dump */
+    constexpr static const u32 MAX_ENQ_DEQ_DUMPS = 32768;
+    std::vector<EnqueueDump> enQsDumpList{ MAX_ENQ_DEQ_DUMPS };
+    std::vector<DequeueDump> dQsDumpList{ MAX_ENQ_DEQ_DUMPS };
+    u64 enqDumpIdx = 0;
+    u64 dqDumpIdx = 0;
+    std::mutex dumpingMutex;
+
+    void pushNextEnq(EnqueueDump &&dump);
+    void pushNextDeq(DequeueDump &&dump);
+    static JobSystem *dumpTlJobSysPtr();
+#endif
 };
 
 //////////////////////////////////////////////////////////////////////////

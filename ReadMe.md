@@ -231,6 +231,7 @@ If you are going to use `dispatch()` or `diverge()` followed by a `waitOnAwaitab
 This can be done by returning an awaitable from the outer diverge. The outer diverge could be a `copat::JobSystemReturnableTask<RetType, true, copat::EJobThreadType::WorkerThreads, copat::EJobPriority::Priority_Normal>`.
 
 Example:
+
 ```cpp
 auto innerDiverge = [&](u32 idx)
 {
@@ -364,6 +365,15 @@ or use macro
 ```cpp
 JobSystem js(NOSPECIALTHREAD_ENUM_TO_FLAGBIT(Render), COPAT_TCHAR("JsName"));
 ```
+
+## Debugging Job execution chain
+
+If you ever find yourself in a head scratching situation where you are trying to figure why my job system crashes or job chains not working as expected. Behold the `OVERRIDE_DEBUG_JOBS` and `OVERRIDE_DEBUG_JOBS_DUMP` macros.
+
+- `OVERRIDE_DEBUG_JOBS` - Can by itself used alone to debug the jobs/task enqueueing and from where using debugger and inspecting `JobSystem::dQsDumpList` and `JobSystem::enQsDumpList`.
+- `OVERRIDE_DEBUG_JOBS_DUMP` - Can be used to write the data out by provided implementation. Either for dumping or visualization.
+
+***Special thanks to my wife because she is the one saw me scratching my head, pulling my hair out and spending quater a day figuring out a bug and suggested to include my debugging code as a feature***
 
 ## References
 

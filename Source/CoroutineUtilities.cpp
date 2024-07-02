@@ -4,7 +4,7 @@
  * \author Jeslas
  * \date April 2023
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2023
+ *  Copyright (C) Jeslas Pravin, 2022-2024
  *  @jeslaspravin pravinjeslas@gmail.com
  *  License can be read in LICENSE file at this repository's root
  */
@@ -19,10 +19,10 @@ JobSystemFuncAwaiter::PromiseType::PromiseType()
     : enqToJobSystem(JobSystem::get())
 {}
 
-void SwitchJobSystemThreadAwaiter::enqueueToJs(std::coroutine_handle<> h, EJobPriority priority) const noexcept
+void SwitchJobSystemThreadAwaiter::enqueueToJs(std::coroutine_handle<> h, EJobPriority priority, std::source_location srcLoc) const noexcept
 {
     COPAT_ASSERT(switchToJs);
-    switchToJs->enqueueJob(h, switchToThread, priority);
+    switchToJs->enqueueJob(h, switchToThread, priority, srcLoc);
 }
 
 } // namespace copat

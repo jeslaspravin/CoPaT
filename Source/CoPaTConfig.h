@@ -4,7 +4,7 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2023
+ *  Copyright (C) Jeslas Pravin, 2022-2024
  *  @jeslaspravin pravinjeslas@gmail.com
  *  License can be read in LICENSE file at this repository's root
  */
@@ -102,6 +102,16 @@
  */
 // #define OVERRIDE_UINT32 uint32
 // #define OVERRIDE_UINT64 uint64
+
+/**
+ * Override if want to debug job enq/deq executions.
+ */
+// #define OVERRIDE_DEBUG_JOBS
+
+/**
+ * Override dumping logic.
+ */
+// #define OVERRIDE_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount) writeToFile(JobSys, EnqList, EnqCount, DeqList, DeqCount)
 
 //////////////////////////////////////////////////////////////////////////
 /// Actual config
@@ -202,6 +212,25 @@
 #endif
 
 #endif // #ifndef COPAT_ENABLE_QUEUE_ALLOC_TRACKING
+
+#ifdef OVERRIDE_DEBUG_JOBS
+#define COPAT_DEBUG_JOBS 1
+#else
+#define COPAT_DEBUG_JOBS 0
+#endif
+
+#if COPAT_DEBUG_JOBS
+
+#ifdef OVERRIDE_DEBUG_JOBS_DUMP
+#define COPAT_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount)                                                                    \
+    OVERRIDE_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount)
+#else
+#define COPAT_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount)
+#endif
+
+#else // #if COPAT_DEBUG_JOBS
+#define COPAT_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount)
+#endif // #if COPAT_DEBUG_JOBS
 
 COPAT_NS_INLINED
 namespace copat
