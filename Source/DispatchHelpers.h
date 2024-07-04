@@ -12,6 +12,7 @@
 #pragma once
 
 #include "JobSystem.h"
+#include "CoroutineUtilities.h"
 
 COPAT_NS_INLINED
 namespace copat
@@ -177,6 +178,33 @@ std::vector<RetType> converge(AwaitAllTasks<std::vector<DispatchAwaitableTypeWit
 }
 template <typename RetType>
 ConvergeAwaitable<RetType> awaitConverge(AwaitAllTasks<std::vector<DispatchAwaitableTypeWithRet<std::vector<RetType>>>> &&allAwaits) noexcept
+{
+    using DispatcherType = DispatchWithReturn<RetType>;
+    using RetTypeRef = typename DispatcherType::RetTypeRef;
+    static_assert(
+        std::is_same_v<DispatchAwaitableTypeWithRet<std::vector<RetType>>, typename DispatcherType::AwaitableType>,
+        "Type mismatch between dispatch and diverge functions"
+    );
+    static_assert(
+        !IsAwaitableType_v<RetType>, "r-value converging awaitable might cause diverged lambda to destroy before final_suspend, Consider using "
+                                     "l-value converge or lock wait converge!"
+    );
+    std::vector<RetType> retVals;
+    /* Must be captured inside this coroutine for allAwaits to live */
+    auto allAwaitsLocal = std::forward<std::remove_reference_t<decltype(allAwaits)>>(allAwaits);
+    for (const auto &awaitable : co_await allAwaitsLocal)
+    {
+        retVals.reserve(retVals.size() + awaitable.getReturnValue().size());
+        for (RetTypeRef retVal : awaitable.getReturnValue())
+        {
+            retVals.emplace_back(std::move(retVal));
+        }
+    }
+    co_return retVals;
+}
+/* Diverge with sub diverge tend to face lambda lifetime issue, In such a case use this awaitConverge */
+template <typename RetType>
+ConvergeAwaitable<RetType> awaitConverge(AwaitAllTasks<std::vector<DispatchAwaitableTypeWithRet<std::vector<RetType>>>> &allAwaits) noexcept
 {
     using DispatcherType = DispatchWithReturn<RetType>;
     using RetTypeRef = typename DispatcherType::RetTypeRef;
