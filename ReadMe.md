@@ -208,6 +208,36 @@ copat::NormalFuncAwaiter testDispatch()
 ```
 
 `diverge()` and `converge()` functions can be used to dispatch a returnable job on an `n` number of data. The `converge` collects all the returned values and returns them.
+Note that if diverging as another coroutine the converge will wait for the coroutine to finish and returns the return value from the coroutine.
+If you want deeper parallelism with dispatched coroutine and not wait for the dispatched coroutine at converge? The coroutine must be boxed/Wrapped like below example.
+
+```cpp
+using PerDispAwaitable = ReturnableAsync<std::vector<...>>;
+auto dispatchAsync = [&](u32 idx) -> PerDispAwaitable
+{
+    std::vector<...> results;
+    /* Diverge further */
+    results = co_await copat::awaitConverge(copat::diverge(...));
+    co_return results;
+};
+auto dispatchAwaitable = copat::diverge(
+    &js,    
+    [&dispatchAsync](u32 idx)
+    {
+        return TypeWrappper<PerDispAwaitable>{ dispatchAsync(idx) };
+    },
+    nCount
+);
+
+/* Does not wait for sub coroutines here.
+ * If using unwrapped converge waits for every sub dispatches here and returns the results instead of awaitables */
+std::vector awaitablesList = std::move(copat::converge(std::move(dispatchAwaitable)));
+for (SizeT idx = 0; idx < awaitablesList.size(); ++idx)
+{
+    /* Wait only when results are absolutely needed */
+    std::vector results = copat::waitOnAwaitable(std::move(awaitablesList[idx].awaitable));
+}
+```
 
 ### Diverge Example
 

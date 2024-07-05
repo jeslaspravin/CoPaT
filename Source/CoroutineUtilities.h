@@ -63,6 +63,7 @@ template <typename AwaiterType>
 constexpr bool HasAwaitResume_v = HasAwaitResume<AwaiterType>::value;
 
 template <typename AwaiterType>
+requires (HasAwaitResume_v<AwaiterType>)
 using AwaiterReturnType = decltype(std::declval<AwaiterType>().await_resume());
 
 template <typename AwaiterType>

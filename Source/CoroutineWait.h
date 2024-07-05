@@ -128,7 +128,7 @@ public:
     }
 };
 
-template <AwaitableTypeConcept AwaitableType, typename RetType = AwaiterReturnType<GetAwaiterType_t<AwaitableType>>>
+template <AwaitableTypeConcept AwaitableType, typename RetType>
 WaitOnAwaitable<RetType> awaitOnAwaitable(AwaitableType &awaitable) noexcept
 {
     // Can we not yield on void? like promise_type::yield_value(void)?
@@ -142,21 +142,21 @@ WaitOnAwaitable<void> awaitOnVoidAwaitable(AwaitableType &awaitable) noexcept
 
 template <AwaitableTypeConcept AwaitableType, typename RetType = AwaiterReturnType<GetAwaiterType_t<AwaitableType>>>
 requires (!std::is_void_v<RetType>)
-RetType waitOnAwaitable(AwaitableType &&awaitable) noexcept
+auto waitOnAwaitable(AwaitableType &&awaitable) noexcept
 {
     impl::WaitOnAwaitable<RetType> waitingOnAwaitable = impl::awaitOnAwaitable<AwaitableType, RetType>(awaitable);
     std::binary_semaphore semaphore{ 0 };
     waitingOnAwaitable.startWait(semaphore);
     semaphore.acquire();
 
-    return waitingOnAwaitable.getReturnValue();
+    return std::move(waitingOnAwaitable.getReturnValue());
 }
 
 template <AwaitableTypeConcept AwaitableType, typename RetType = AwaiterReturnType<GetAwaiterType_t<AwaitableType>>>
 requires std::is_void_v<RetType>
-RetType waitOnAwaitable(AwaitableType &&awaitable) noexcept
+void waitOnAwaitable(AwaitableType &&awaitable) noexcept
 {
-    impl::WaitOnAwaitable<RetType> waitingOnAwaitable = impl::awaitOnVoidAwaitable(awaitable);
+    impl::WaitOnAwaitable<void> waitingOnAwaitable = impl::awaitOnVoidAwaitable(awaitable);
     std::binary_semaphore semaphore{ 0 };
     waitingOnAwaitable.startWait(semaphore);
     semaphore.acquire();

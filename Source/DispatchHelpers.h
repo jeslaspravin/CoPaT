@@ -59,28 +59,64 @@ NormalFuncAwaiter fireAndForget(FuncType &&func, Args &&...args) noexcept
 template <typename RetType>
 struct DispatchWithReturn
 {
-    using AwaitableType = DispatchAwaitableTypeWithRet<std::vector<RetType>>;
+public:
+    template <typename T>
+    struct ReturnTypeTraits
+    {
+        using PossibleReturnType = T;
+    };
+    template <AwaitableTypeConcept T>
+    struct ReturnTypeTraits<T>
+    {
+        using PossibleReturnType = AwaiterReturnType<RetType>;
+    };
+    using PossibleReturnType = typename ReturnTypeTraits<RetType>::PossibleReturnType;
+
+    using ReturnType = std::conditional_t<
+        std::disjunction_v<std::is_reference<PossibleReturnType>, std::is_const<std::remove_reference_t<PossibleReturnType>>>,
+        std::remove_reference_t<PossibleReturnType>, PossibleReturnType>;
+
+    using AwaitableType = DispatchAwaitableTypeWithRet<std::vector<ReturnType>>;
     using FuncType = DispatchFunctionTypeWithRet<RetType>;
     /* Fundamental types used as reference and moving into result array is inefficient */
-    using RetTypeRef = std::conditional_t<std::is_fundamental_v<RetType>, RetType, RetType &>;
+    using RetTypeRef = std::conditional_t<std::is_fundamental_v<ReturnType>, ReturnType, ReturnType &>;
 
     // Just copying the callback so a copy exists inside dispatch
     static AwaitableType dispatchOneTask(JobSystem &jobSys, EJobPriority jobPriority, FuncType callback, u32 jobIdx) noexcept
     {
-        std::vector<RetType> retVal;
-        /* Not using initializer list constructor as it copies while emplace move constructs */
-        retVal.emplace_back(callback(jobIdx));
+        std::vector<ReturnType> retVal;
+        /* If the return type is awaitable then await for that as well */
+        if constexpr (IsAwaitableType_v<RetType>)
+        {
+            /* Not using initializer list constructor as it copies while emplace move constructs */
+            retVal.emplace_back(co_await callback(jobIdx));
+        }
+        else
+        {
+            /* Not using initializer list constructor as it copies while emplace move constructs */
+            retVal.emplace_back(callback(jobIdx));
+        }
         co_return retVal;
     }
     static AwaitableType dispatchTaskGroup(JobSystem &jobSys, EJobPriority jobPriority, FuncType callback, u32 fromJobIdx, u32 count) noexcept
     {
-        std::vector<RetType> retVal;
+        std::vector<ReturnType> retVal;
         retVal.reserve(count);
 
         const u32 endJobIdx = fromJobIdx + count;
         for (u32 jobIdx = fromJobIdx; jobIdx < endJobIdx; ++jobIdx)
         {
-            retVal.emplace_back(callback(jobIdx));
+            /* If the return type is awaitable then await for that as well */
+            if constexpr (IsAwaitableType_v<RetType>)
+            {
+                /* Not using initializer list constructor as it copies while emplace move constructs */
+                retVal.emplace_back(co_await callback(jobIdx));
+            }
+            else
+            {
+                /* Not using initializer list constructor as it copies while emplace move constructs */
+                retVal.emplace_back(callback(jobIdx));
+            }
         }
         co_return retVal;
     }
@@ -185,35 +221,10 @@ ConvergeAwaitable<RetType> awaitConverge(AwaitAllTasks<std::vector<DispatchAwait
         std::is_same_v<DispatchAwaitableTypeWithRet<std::vector<RetType>>, typename DispatcherType::AwaitableType>,
         "Type mismatch between dispatch and diverge functions"
     );
-    static_assert(
-        !IsAwaitableType_v<RetType>, "r-value converging awaitable might cause diverged lambda to destroy before final_suspend, Consider using "
-                                     "l-value converge or lock wait converge!"
-    );
     std::vector<RetType> retVals;
     /* Must be captured inside this coroutine for allAwaits to live */
     auto allAwaitsLocal = std::forward<std::remove_reference_t<decltype(allAwaits)>>(allAwaits);
     for (const auto &awaitable : co_await allAwaitsLocal)
-    {
-        retVals.reserve(retVals.size() + awaitable.getReturnValue().size());
-        for (RetTypeRef retVal : awaitable.getReturnValue())
-        {
-            retVals.emplace_back(std::move(retVal));
-        }
-    }
-    co_return retVals;
-}
-/* Diverge with sub diverge tend to face lambda lifetime issue, In such a case use this awaitConverge */
-template <typename RetType>
-ConvergeAwaitable<RetType> awaitConverge(AwaitAllTasks<std::vector<DispatchAwaitableTypeWithRet<std::vector<RetType>>>> &allAwaits) noexcept
-{
-    using DispatcherType = DispatchWithReturn<RetType>;
-    using RetTypeRef = typename DispatcherType::RetTypeRef;
-    static_assert(
-        std::is_same_v<DispatchAwaitableTypeWithRet<std::vector<RetType>>, typename DispatcherType::AwaitableType>,
-        "Type mismatch between dispatch and diverge functions"
-    );
-    std::vector<RetType> retVals;
-    for (const auto &awaitable : co_await allAwaits)
     {
         retVals.reserve(retVals.size() + awaitable.getReturnValue().size());
         for (RetTypeRef retVal : awaitable.getReturnValue())
