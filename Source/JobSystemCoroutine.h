@@ -306,35 +306,35 @@ public:
             : BasePromiseType(JobSystem::get(), Priority)
         {}
         /* For static functions */
-        PromiseType(JobSystem &jobSystem, auto...)
+        PromiseType(JobSystem &jobSystem, auto &&...)
             : BasePromiseType(&jobSystem, Priority)
         {}
-        PromiseType(JobSystem *jobSystem, auto...)
+        PromiseType(JobSystem *jobSystem, auto &&...)
             : BasePromiseType(jobSystem, Priority)
         {}
-        PromiseType(JobSystem &jobSystem, EJobPriority priority, auto...)
+        PromiseType(JobSystem &jobSystem, EJobPriority priority, auto &&...)
             : BasePromiseType(&jobSystem, priority)
         {}
-        PromiseType(JobSystem *jobSystem, EJobPriority priority, auto...)
+        PromiseType(JobSystem *jobSystem, EJobPriority priority, auto &&...)
             : BasePromiseType(jobSystem, priority)
         {}
-        PromiseType(EJobPriority priority, auto...)
+        PromiseType(EJobPriority priority, auto &&...)
             : BasePromiseType(JobSystem::get(), priority)
         {}
         /* For member functions */
-        PromiseType(auto &, JobSystem &jobSystem, auto...)
+        PromiseType(auto &, JobSystem &jobSystem, auto &&...)
             : BasePromiseType(&jobSystem, Priority)
         {}
-        PromiseType(auto &, JobSystem *jobSystem, auto...)
+        PromiseType(auto &, JobSystem *jobSystem, auto &&...)
             : BasePromiseType(jobSystem, Priority)
         {}
-        PromiseType(auto &, JobSystem &jobSystem, EJobPriority priority, auto...)
+        PromiseType(auto &, JobSystem &jobSystem, EJobPriority priority, auto &&...)
             : BasePromiseType(&jobSystem, priority)
         {}
-        PromiseType(auto &, JobSystem *jobSystem, EJobPriority priority, auto...)
+        PromiseType(auto &, JobSystem *jobSystem, EJobPriority priority, auto &&...)
             : BasePromiseType(jobSystem, priority)
         {}
-        PromiseType(auto &, EJobPriority priority, auto...)
+        PromiseType(auto &, EJobPriority priority, auto &&...)
             : BasePromiseType(JobSystem::get(), priority)
         {}
 
@@ -436,35 +436,35 @@ public:
             : BasePromiseType(JobSystem::get(), Priority)
         {}
         /* For static functions */
-        PromiseType(JobSystem &jobSystem, auto...)
+        PromiseType(JobSystem &jobSystem, auto &&...)
             : BasePromiseType(&jobSystem, Priority)
         {}
-        PromiseType(JobSystem *jobSystem, auto...)
+        PromiseType(JobSystem *jobSystem, auto &&...)
             : BasePromiseType(jobSystem, Priority)
         {}
-        PromiseType(JobSystem &jobSystem, EJobPriority priority, auto...)
+        PromiseType(JobSystem &jobSystem, EJobPriority priority, auto &&...)
             : BasePromiseType(&jobSystem, priority)
         {}
-        PromiseType(JobSystem *jobSystem, EJobPriority priority, auto...)
+        PromiseType(JobSystem *jobSystem, EJobPriority priority, auto &&...)
             : BasePromiseType(jobSystem, priority)
         {}
-        PromiseType(EJobPriority priority, auto...)
+        PromiseType(EJobPriority priority, auto &&...)
             : BasePromiseType(JobSystem::get(), priority)
         {}
         /* For member functions */
-        PromiseType(auto &, JobSystem &jobSystem, auto...)
+        PromiseType(auto &, JobSystem &jobSystem, auto &&...)
             : BasePromiseType(&jobSystem, Priority)
         {}
-        PromiseType(auto &, JobSystem *jobSystem, auto...)
+        PromiseType(auto &, JobSystem *jobSystem, auto &&...)
             : BasePromiseType(jobSystem, Priority)
         {}
-        PromiseType(auto &, JobSystem &jobSystem, EJobPriority priority, auto...)
+        PromiseType(auto &, JobSystem &jobSystem, EJobPriority priority, auto &&...)
             : BasePromiseType(&jobSystem, priority)
         {}
-        PromiseType(auto &, JobSystem *jobSystem, EJobPriority priority, auto...)
+        PromiseType(auto &, JobSystem *jobSystem, EJobPriority priority, auto &&...)
             : BasePromiseType(jobSystem, priority)
         {}
-        PromiseType(auto &, EJobPriority priority, auto...)
+        PromiseType(auto &, EJobPriority priority, auto &&...)
             : BasePromiseType(JobSystem::get(), priority)
         {}
 
@@ -542,35 +542,35 @@ public:
             : BasePromiseType(JobSystem::get(), Priority)
         {}
         /* For static functions */
-        PromiseType(JobSystem &jobSystem, auto...)
+        PromiseType(JobSystem &jobSystem, auto &&...)
             : BasePromiseType(&jobSystem, Priority)
         {}
-        PromiseType(JobSystem *jobSystem, auto...)
+        PromiseType(JobSystem *jobSystem, auto &&...)
             : BasePromiseType(jobSystem, Priority)
         {}
-        PromiseType(JobSystem &jobSystem, EJobPriority priority, auto...)
+        PromiseType(JobSystem &jobSystem, EJobPriority priority, auto &&...)
             : BasePromiseType(&jobSystem, priority)
         {}
-        PromiseType(JobSystem *jobSystem, EJobPriority priority, auto...)
+        PromiseType(JobSystem *jobSystem, EJobPriority priority, auto &&...)
             : BasePromiseType(jobSystem, priority)
         {}
-        PromiseType(EJobPriority priority, auto...)
+        PromiseType(EJobPriority priority, auto &&...)
             : BasePromiseType(JobSystem::get(), priority)
         {}
         /* For member functions */
-        PromiseType(auto &, JobSystem &jobSystem, auto...)
+        PromiseType(auto &, JobSystem &jobSystem, auto &&...)
             : BasePromiseType(&jobSystem, Priority)
         {}
-        PromiseType(auto &, JobSystem *jobSystem, auto...)
+        PromiseType(auto &, JobSystem *jobSystem, auto &&...)
             : BasePromiseType(jobSystem, Priority)
         {}
-        PromiseType(auto &, JobSystem &jobSystem, EJobPriority priority, auto...)
+        PromiseType(auto &, JobSystem &jobSystem, EJobPriority priority, auto &&...)
             : BasePromiseType(&jobSystem, priority)
         {}
-        PromiseType(auto &, JobSystem *jobSystem, EJobPriority priority, auto...)
+        PromiseType(auto &, JobSystem *jobSystem, EJobPriority priority, auto &&...)
             : BasePromiseType(jobSystem, priority)
         {}
-        PromiseType(auto &, EJobPriority priority, auto...)
+        PromiseType(auto &, EJobPriority priority, auto &&...)
             : BasePromiseType(JobSystem::get(), priority)
         {}
 
@@ -654,35 +654,35 @@ public:
             : BasePromiseType(JobSystem::get(), Priority)
         {}
         /* For static functions */
-        PromiseType(JobSystem &jobSystem, auto...)
+        PromiseType(JobSystem &jobSystem, auto &&...)
             : BasePromiseType(&jobSystem, Priority)
         {}
-        PromiseType(JobSystem *jobSystem, auto...)
+        PromiseType(JobSystem *jobSystem, auto &&...)
             : BasePromiseType(jobSystem, Priority)
         {}
-        PromiseType(JobSystem &jobSystem, EJobPriority priority, auto...)
+        PromiseType(JobSystem &jobSystem, EJobPriority priority, auto &&...)
             : BasePromiseType(&jobSystem, priority)
         {}
-        PromiseType(JobSystem *jobSystem, EJobPriority priority, auto...)
+        PromiseType(JobSystem *jobSystem, EJobPriority priority, auto &&...)
             : BasePromiseType(jobSystem, priority)
         {}
-        PromiseType(EJobPriority priority, auto...)
+        PromiseType(EJobPriority priority, auto &&...)
             : BasePromiseType(JobSystem::get(), priority)
         {}
         /* For member functions */
-        PromiseType(auto &, JobSystem &jobSystem, auto...)
+        PromiseType(auto &, JobSystem &jobSystem, auto &&...)
             : BasePromiseType(&jobSystem, Priority)
         {}
-        PromiseType(auto &, JobSystem *jobSystem, auto...)
+        PromiseType(auto &, JobSystem *jobSystem, auto &&...)
             : BasePromiseType(jobSystem, Priority)
         {}
-        PromiseType(auto &, JobSystem &jobSystem, EJobPriority priority, auto...)
+        PromiseType(auto &, JobSystem &jobSystem, EJobPriority priority, auto &&...)
             : BasePromiseType(&jobSystem, priority)
         {}
-        PromiseType(auto &, JobSystem *jobSystem, EJobPriority priority, auto...)
+        PromiseType(auto &, JobSystem *jobSystem, EJobPriority priority, auto &&...)
             : BasePromiseType(jobSystem, priority)
         {}
-        PromiseType(auto &, EJobPriority priority, auto...)
+        PromiseType(auto &, EJobPriority priority, auto &&...)
             : BasePromiseType(JobSystem::get(), priority)
         {}
 

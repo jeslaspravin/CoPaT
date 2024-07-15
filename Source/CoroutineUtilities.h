@@ -155,12 +155,8 @@ constexpr bool IsJobSystemPromiseType_v = IsJobSystemPromiseType<T>::value;
 
 template <typename T>
 concept JobSystemPromiseType = requires {
-    {
-        T::enqToJobSystem
-    } -> std::convertible_to<JobSystem *>;
-    {
-        T::jobPriority
-    } -> std::convertible_to<EJobPriority>;
+    { T::enqToJobSystem } -> std::convertible_to<JobSystem *>;
+    { T::jobPriority } -> std::convertible_to<EJobPriority>;
 };
 
 //////////////////////////////////////////////////////////////////////////
@@ -200,21 +196,41 @@ public:
         JobSystem *enqToJobSystem = nullptr;
         EJobPriority jobPriority = EJobPriority::Priority_Normal;
 
-        PromiseType(JobSystem &jobSystem, auto...)
+        /* For static functions */
+        PromiseType(JobSystem &jobSystem, auto &&...)
             : enqToJobSystem(&jobSystem)
         {}
-        PromiseType(JobSystem *jobSystem, auto...)
+        PromiseType(JobSystem *jobSystem, auto &&...)
             : enqToJobSystem(jobSystem)
         {}
-        PromiseType(JobSystem &jobSystem, EJobPriority priority, auto...)
+        PromiseType(JobSystem &jobSystem, EJobPriority priority, auto &&...)
             : enqToJobSystem(&jobSystem)
             , jobPriority(priority)
         {}
-        PromiseType(JobSystem *jobSystem, EJobPriority priority, auto...)
+        PromiseType(JobSystem *jobSystem, EJobPriority priority, auto &&...)
             : enqToJobSystem(jobSystem)
             , jobPriority(priority)
         {}
-        PromiseType(EJobPriority priority, auto...)
+        PromiseType(EJobPriority priority, auto &&...)
+            : PromiseType()
+            , jobPriority(priority)
+        {}
+        /* For member functions */
+        PromiseType(auto &, JobSystem &jobSystem, auto &&...)
+            : enqToJobSystem(&jobSystem)
+        {}
+        PromiseType(auto &, JobSystem *jobSystem, auto &&...)
+            : enqToJobSystem(jobSystem)
+        {}
+        PromiseType(auto &, JobSystem &jobSystem, EJobPriority priority, auto &&...)
+            : enqToJobSystem(&jobSystem)
+            , jobPriority(priority)
+        {}
+        PromiseType(auto &, JobSystem *jobSystem, EJobPriority priority, auto &&...)
+            : enqToJobSystem(jobSystem)
+            , jobPriority(priority)
+        {}
+        PromiseType(auto &, EJobPriority priority, auto &&...)
             : PromiseType()
             , jobPriority(priority)
         {}
