@@ -155,13 +155,35 @@ constexpr bool IsJobSystemPromiseType_v = IsJobSystemPromiseType<T>::value;
 
 template <typename T>
 concept JobSystemPromiseType = requires {
-    { T::enqToJobSystem } -> std::convertible_to<JobSystem *>;
-    { T::jobPriority } -> std::convertible_to<EJobPriority>;
+    {
+        T::enqToJobSystem
+    } -> std::convertible_to<JobSystem *>;
+    {
+        T::jobPriority
+    } -> std::convertible_to<EJobPriority>;
 };
 
 //////////////////////////////////////////////////////////////////////////
 /// Awaiter/Awaitable
 //////////////////////////////////////////////////////////////////////////
+
+struct GetCoroutineHandle
+{
+private:
+    std::coroutine_handle<void> hndl;
+
+public:
+    GetCoroutineHandle() = default;
+
+    constexpr bool await_ready() const noexcept { return false; }
+    bool await_suspend(std::coroutine_handle<void> h) noexcept
+    {
+        hndl = h;
+        /* Just wanted the coroutine, no need to suspend */
+        return false;
+    }
+    constexpr std::coroutine_handle<void> await_resume() const noexcept { return hndl; }
+};
 
 /**
  * This Awaiter should be used if you want to have a normal function to wrap another Awaitable.
@@ -414,8 +436,6 @@ public:
     {
         return *this;
     }
-
-    constexpr operator void () const noexcept {}
 
     constexpr RefType get() noexcept { return {}; }
     [[nodiscard]] constexpr bool isValid() noexcept { return false; }

@@ -416,6 +416,7 @@ public:
     void joinMain() noexcept { runMain(); }
     void exitMain() noexcept { bExitMain[0].test_and_set(std::memory_order::release); }
     void shutdown() noexcept;
+    bool isRunning() const noexcept { return bExitMain[1].test(std::memory_order::relaxed); }
 
     void enqueueJob(
         std::coroutine_handle<> coro, EJobThreadType enqueueToThread = EJobThreadType::WorkerThreads,
@@ -433,7 +434,6 @@ public:
     /* Will return non zero index only for workers, for others always returns 0 */
     u32 getCurrentThreadIdx() const noexcept
     {
-
         if (PerThreadData *tlData = getPerThreadData())
         {
             return tlData->threadType == EJobThreadType::WorkerThreads ? tlData->threadIdx : 0u;
