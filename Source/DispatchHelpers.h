@@ -32,7 +32,7 @@ template <typename RetType>
 using DispatchAwaitableTypeWithRet
     = JobSystemTaskType<RetType, JobSystemPromiseBase, true, EJobThreadType::WorkerThreads, EJobPriority::Priority_Normal>;
 template <typename RetType>
-using DispatchFunctionTypeWithRet = FunctionType<RetType, u32>;
+using DispatchFunctionTypeWithRet = FunctionType<RetType, u64>;
 
 using DispatchAwaitableType = DispatchAwaitableTypeWithRet<void>;
 using DispatchFunctionType = DispatchFunctionTypeWithRet<void>;
@@ -41,12 +41,13 @@ template <typename RetType>
 using ConvergeAwaitable
     = JobSystemTaskType<std::vector<RetType>, JobSystemPromiseBase, false, EJobThreadType::WorkerThreads, EJobPriority::Priority_Normal>;
 
-COPAT_EXPORT_SYM AwaitAllTasks<std::vector<DispatchAwaitableType>>
-dispatch(JobSystem *jobSys, const DispatchFunctionType &callback, u32 count, EJobPriority jobPriority = EJobPriority::Priority_Normal) noexcept;
+COPAT_EXPORT_SYM AwaitAllTasks<std::vector<DispatchAwaitableType>> dispatch(
+    JobSystem *jobSys, const DispatchFunctionType &callback, u64 count, EJobPriority jobPriority = EJobPriority::Priority_Normal
+) noexcept;
 
 // Dispatch and wait immediately
 COPAT_EXPORT_SYM void parallelFor(
-    JobSystem *jobSys, const DispatchFunctionType &callback, u32 count, EJobPriority jobPriority = EJobPriority::Priority_Normal
+    JobSystem *jobSys, const DispatchFunctionType &callback, u64 count, EJobPriority jobPriority = EJobPriority::Priority_Normal
 ) noexcept;
 
 template <typename FuncType, typename... Args>
@@ -82,7 +83,7 @@ public:
     using RetTypeRef = std::conditional_t<std::is_fundamental_v<ReturnType>, ReturnType, ReturnType &>;
 
     // Just copying the callback so a copy exists inside dispatch
-    static AwaitableType dispatchOneTask(JobSystem &jobSys, EJobPriority jobPriority, FuncType callback, u32 jobIdx) noexcept
+    static AwaitableType dispatchOneTask(JobSystem &jobSys, EJobPriority jobPriority, FuncType callback, u64 jobIdx) noexcept
     {
         std::vector<ReturnType> retVal;
         /* If the return type is awaitable then await for that as well */
@@ -98,13 +99,13 @@ public:
         }
         co_return retVal;
     }
-    static AwaitableType dispatchTaskGroup(JobSystem &jobSys, EJobPriority jobPriority, FuncType callback, u32 fromJobIdx, u32 count) noexcept
+    static AwaitableType dispatchTaskGroup(JobSystem &jobSys, EJobPriority jobPriority, FuncType callback, u64 fromJobIdx, u64 count) noexcept
     {
         std::vector<ReturnType> retVal;
         retVal.reserve(count);
 
-        const u32 endJobIdx = fromJobIdx + count;
-        for (u32 jobIdx = fromJobIdx; jobIdx < endJobIdx; ++jobIdx)
+        const u64 endJobIdx = fromJobIdx + count;
+        for (u64 jobIdx = fromJobIdx; jobIdx < endJobIdx; ++jobIdx)
         {
             /* If the return type is awaitable then await for that as well */
             if constexpr (IsAwaitableType_v<RetType>)
@@ -122,7 +123,7 @@ public:
     }
 
     static AwaitAllTasks<std::vector<AwaitableType>>
-    dispatch(JobSystem *jobSys, const FuncType &callback, u32 count, EJobPriority jobPriority) noexcept
+    dispatch(JobSystem *jobSys, const FuncType &callback, u64 count, EJobPriority jobPriority) noexcept
     {
         if (count == 0)
         {
@@ -144,12 +145,12 @@ public:
         }
 
         const u32 grpCount = jobSys->getWorkersCount();
-        u32 jobsPerGrp = count / grpCount;
+        u64 jobsPerGrp = count / grpCount;
         // If dispatching count is less than max workers count
         if (jobsPerGrp == 0)
         {
             dispatchedJobs.reserve(count);
-            for (u32 i = 0; i < count; ++i)
+            for (u64 i = 0; i < count; ++i)
             {
                 dispatchedJobs.emplace_back(std::move(dispatchOneTask(*jobSys, jobPriority, callback, i)));
             }
@@ -158,7 +159,7 @@ public:
         {
             dispatchedJobs.reserve(grpCount);
             u32 grpsWithMoreJobCount = count % grpCount;
-            u32 jobIdx = 0;
+            u64 jobIdx = 0;
             for (u32 i = 0; i < grpsWithMoreJobCount; ++i)
             {
                 // Add one more job for all grps with more jobs
@@ -181,7 +182,8 @@ public:
  */
 template <typename RetType>
 auto diverge(
-    JobSystem *jobSys, const DispatchFunctionTypeWithRet<RetType> &callback, u32 count, EJobPriority jobPriority = EJobPriority::Priority_Normal
+    JobSystem *jobSys, const DispatchFunctionTypeWithRet<RetType> &callback, u64 count,
+    EJobPriority jobPriority = EJobPriority::Priority_Normal
 ) noexcept
 {
     using DispatcherType = DispatchWithReturn<RetType>;
@@ -238,7 +240,8 @@ ConvergeAwaitable<RetType> awaitConverge(AwaitAllTasks<std::vector<DispatchAwait
 // diverge, converge immediately and returns the result
 template <typename RetType>
 std::vector<RetType> parallelForReturn(
-    JobSystem *jobSys, const DispatchFunctionTypeWithRet<RetType> &callback, u32 count, EJobPriority jobPriority = EJobPriority::Priority_Normal
+    JobSystem *jobSys, const DispatchFunctionTypeWithRet<RetType> &callback, u64 count,
+    EJobPriority jobPriority = EJobPriority::Priority_Normal
 ) noexcept
 {
     using DispatcherType = DispatchWithReturn<RetType>;
@@ -260,14 +263,14 @@ std::vector<RetType> parallelForReturn(
 
     // If dispatching count is less than max workers count then jobsPerGrp will be 1
     // Else it will be jobsPerGrp or jobsPerGrp + 1 depending on count equiv-distributable among workers
-    u32 jobsPerGrp = count / grpCount;
+    u64 jobsPerGrp = count / grpCount;
     jobsPerGrp += (count % grpCount) > 0;
 
     AwaitAllTasks<std::vector<AwaitableType>> allAwaits = diverge(jobSys, callback, count - jobsPerGrp, jobPriority);
 
     std::vector<RetType> lastGrpRets;
     lastGrpRets.reserve(jobsPerGrp);
-    for (u32 jobIdx = count - jobsPerGrp; jobIdx < count; ++jobIdx)
+    for (u64 jobIdx = count - jobsPerGrp; jobIdx < count; ++jobIdx)
     {
         lastGrpRets.emplace_back(callback(jobIdx));
     }
