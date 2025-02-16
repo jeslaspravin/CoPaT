@@ -4,7 +4,7 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2024
+ *  Copyright (C) Jeslas Pravin, 2022-2025
  *  @jeslaspravin pravinjeslas@gmail.com
  *  License can be read in LICENSE file at this repository's root
  */
@@ -146,6 +146,7 @@ using GetAwaiterType_t = GetAwaiterType<AwaitableType>::type;
 //////////////////////////////////////////////////////////////////////////
 
 class JobSystem;
+COPAT_EXPORT_SYM JobSystem *getDefaultJobSystem();
 
 template <typename T>
 using IsJobSystemPromiseType
@@ -155,12 +156,8 @@ constexpr bool IsJobSystemPromiseType_v = IsJobSystemPromiseType<T>::value;
 
 template <typename T>
 concept JobSystemPromiseType = requires {
-    {
-        T::enqToJobSystem
-    } -> std::convertible_to<JobSystem *>;
-    {
-        T::jobPriority
-    } -> std::convertible_to<EJobPriority>;
+    { T::enqToJobSystem } -> std::convertible_to<JobSystem *>;
+    { T::jobPriority } -> std::convertible_to<EJobPriority>;
 };
 
 //////////////////////////////////////////////////////////////////////////
@@ -218,6 +215,9 @@ public:
         JobSystem *enqToJobSystem = nullptr;
         EJobPriority jobPriority = EJobPriority::Priority_Normal;
 
+        PromiseType()
+            : enqToJobSystem(getDefaultJobSystem())
+        {}
         /* For static functions */
         PromiseType(JobSystem &jobSystem, auto &&...)
             : enqToJobSystem(&jobSystem)
@@ -234,7 +234,7 @@ public:
             , jobPriority(priority)
         {}
         PromiseType(EJobPriority priority, auto &&...)
-            : PromiseType()
+            : enqToJobSystem(getDefaultJobSystem())
             , jobPriority(priority)
         {}
         /* For member functions */
@@ -253,11 +253,9 @@ public:
             , jobPriority(priority)
         {}
         PromiseType(auto &, EJobPriority priority, auto &&...)
-            : PromiseType()
+            : enqToJobSystem(getDefaultJobSystem())
             , jobPriority(priority)
         {}
-
-        COPAT_EXPORT_SYM PromiseType();
 
         constexpr JobSystemFuncAwaiter get_return_object() const noexcept { return {}; }
         constexpr std::suspend_never initial_suspend() const noexcept { return {}; }
@@ -346,12 +344,12 @@ public:
     CoroutineReturnStorage &operator= (const CoroutineReturnStorage &) = default;
 
     template <typename AnyType>
-    CoroutineReturnStorage(AnyType &&value)
+    CoroutineReturnStorage(AnyType &&value) noexcept
         : returnValue(std::forward<AnyType>(value))
     {}
 
     template <std::assignable_from<Type> AnyType>
-    CoroutineReturnStorage &operator= (AnyType &&value)
+    CoroutineReturnStorage &operator= (AnyType &&value) noexcept
     {
         returnValue = std::forward<AnyType>(value);
         return *this;
@@ -386,11 +384,11 @@ public:
     CoroutineReturnStorage &operator= (CoroutineReturnStorage &&) = default;
     CoroutineReturnStorage &operator= (const CoroutineReturnStorage &) = default;
 
-    CoroutineReturnStorage(ReturnType value)
+    CoroutineReturnStorage(ReturnType value) noexcept
         : returnValue(&value)
     {}
 
-    CoroutineReturnStorage &operator= (ReturnType value)
+    CoroutineReturnStorage &operator= (ReturnType value) noexcept
     {
         returnValue = &value;
         return *this;
@@ -429,10 +427,10 @@ public:
     CoroutineReturnStorage &operator= (const CoroutineReturnStorage &) = default;
 
     template <typename AnyType>
-    CoroutineReturnStorage(AnyType &&value)
+    CoroutineReturnStorage(AnyType &&value) noexcept
     {}
     template <typename AnyType>
-    CoroutineReturnStorage &operator= (AnyType &&value)
+    CoroutineReturnStorage &operator= (AnyType &&value) noexcept
     {
         return *this;
     }
@@ -446,7 +444,7 @@ public:
  */
 struct CoroutineDestroyer
 {
-    void operator() (void *ptr) const noexcept { std::coroutine_handle<>::from_address(ptr).destroy(); }
+    void operator() (void *coroAddr) const noexcept { std::coroutine_handle<void>::from_address(coroAddr).destroy(); }
 };
 
 } // namespace copat

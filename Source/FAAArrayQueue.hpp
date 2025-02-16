@@ -326,12 +326,12 @@ public:
             }
 
             const int idx = lhead->deqidx.fetch_add(1, std::memory_order::acq_rel);
-            if (idx > QUEUE_NODE_BUFFER_SIZE - 1) // This node has been drained, check if there is another one
+            if (idx > QUEUE_NODE_BUFFER_SIZE - 1) /* This node has been drained, check if there is another one */
             {
                 COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatSetupNextHead"));
 
                 Node *lnext = lhead->next.load(std::memory_order::acquire);
-                if (lnext == nullptr) // No more nodes in the queue
+                if (lnext == nullptr) /* No more nodes in the queue */
                 {
                     break;
                 }
@@ -353,6 +353,26 @@ public:
         }
         hazardRecord.record->reset();
         return nullptr;
+    }
+
+    bool empty() const noexcept
+    {
+        HazardToken token{ hazardsManager };
+        return empty(token);
+    }
+    bool empty(HazardToken &hazardRecord) const noexcept
+    {
+        bool bEmpty = false;
+        Node *lhead = hazardRecord.record->setHazardPtr(head);
+        /* This is a weak condition. Actual thread safe empty() needs modifying the atomic value.
+         * However most of the use case can live with weak check. */
+        if (lhead->deqidx.load(std::memory_order::acquire) >= lhead->enqidx.load(std::memory_order::acquire)
+            && lhead->next.load(std::memory_order::acquire) == nullptr)
+        {
+            bEmpty = true;
+        }
+        hazardRecord.record->reset();
+        return bEmpty;
     }
 };
 
@@ -514,6 +534,16 @@ public:
             return item;
         }
         return nullptr;
+    }
+
+    bool empty() const noexcept
+    {
+        Node *lhead = head;
+        if (lhead->deqidx >= lhead->enqidx.load(std::memory_order::acquire) && lhead->next.load(std::memory_order::acquire) == nullptr)
+        {
+            return true;
+        }
+        return false;
     }
 };
 

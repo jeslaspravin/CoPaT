@@ -4,7 +4,7 @@
  * \author Jeslas
  * \date June 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2024
+ *  Copyright (C) Jeslas Pravin, 2022-2025
  *  @jeslaspravin pravinjeslas@gmail.com
  *  License can be read in LICENSE file at this repository's root
  */
@@ -18,13 +18,12 @@ COPAT_NS_INLINED
 namespace copat
 {
 // Just copying the callback so a copy exists inside dispatch
-DispatchAwaitableType dispatchOneTask(JobSystem &jobSys, EJobPriority jobPriority, DispatchFunctionType callback, u64 jobIdx) noexcept
+static DispatchAwaitableType dispatchOneTask(JobSystem *, EJobPriority, DispatchFunctionType callback, u64 jobIdx) noexcept
 {
     callback(jobIdx);
     co_return;
 }
-DispatchAwaitableType
-dispatchTaskGroup(JobSystem &jobSys, EJobPriority jobPriority, DispatchFunctionType callback, u64 fromJobIdx, u64 count) noexcept
+static DispatchAwaitableType dispatchTaskGroup(JobSystem *, EJobPriority, DispatchFunctionType callback, u64 fromJobIdx, u64 count) noexcept
 {
     const u64 endJobIdx = fromJobIdx + count;
     for (u64 jobIdx = fromJobIdx; jobIdx < endJobIdx; ++jobIdx)
@@ -47,7 +46,7 @@ AwaitAllTasks<std::vector<DispatchAwaitableType>> dispatch(
      * If there is no worker threads and the current thread is same as queuing thread then execute serially.
      * This means workers can enqueue to more workers, Beware of deadlocks when queuing from workers
      */
-    if (!jobSys
+    if (jobSys != nullptr
         || (jobSys->enqToThreadType(EJobThreadType::WorkerThreads) != EJobThreadType::WorkerThreads
             && jobSys->enqToThreadType(EJobThreadType::WorkerThreads) == jobSys->getCurrentThreadType()))
     {
@@ -67,36 +66,36 @@ AwaitAllTasks<std::vector<DispatchAwaitableType>> dispatch(
      */
     if (jobSys->enqToThreadType(EJobThreadType::WorkerThreads) != EJobThreadType::WorkerThreads)
     {
-        dispatchedJobs.emplace_back(std::move(dispatchTaskGroup(*jobSys, jobPriority, callback, 0, count)));
+        dispatchedJobs.emplace_back(dispatchTaskGroup(jobSys, jobPriority, callback, 0, count));
         return awaitAllTasks(std::move(dispatchedJobs));
     }
 
     const u32 grpCount = jobSys->getWorkersCount();
-    u64 jobsPerGrp = count / grpCount;
+    const u64 jobsPerGrp = count / grpCount;
     // If dispatching count is less than max workers count
     if (jobsPerGrp == 0)
     {
         dispatchedJobs.reserve(count);
         for (u64 i = 0; i < count; ++i)
         {
-            dispatchedJobs.emplace_back(std::move(dispatchOneTask(*jobSys, jobPriority, callback, i)));
+            dispatchedJobs.emplace_back(dispatchOneTask(jobSys, jobPriority, callback, i));
         }
     }
     else
     {
         dispatchedJobs.reserve(grpCount);
-        u32 grpsWithMoreJobCount = count % grpCount;
+        const u32 grpsWithMoreJobCount = count % grpCount;
         u64 jobIdx = 0;
         for (u32 i = 0; i < grpsWithMoreJobCount; ++i)
         {
             // Add one more job for all grps with more jobs
-            dispatchedJobs.emplace_back(std::move(dispatchTaskGroup(*jobSys, jobPriority, callback, jobIdx, jobsPerGrp + 1)));
+            dispatchedJobs.emplace_back(dispatchTaskGroup(jobSys, jobPriority, callback, jobIdx, jobsPerGrp + 1));
             jobIdx += jobsPerGrp + 1;
         }
 
         for (u32 i = grpsWithMoreJobCount; i < grpCount; ++i)
         {
-            dispatchedJobs.emplace_back(std::move(dispatchTaskGroup(*jobSys, jobPriority, callback, jobIdx, jobsPerGrp)));
+            dispatchedJobs.emplace_back(dispatchTaskGroup(jobSys, jobPriority, callback, jobIdx, jobsPerGrp));
             jobIdx += jobsPerGrp;
         }
     }
@@ -119,7 +118,7 @@ void parallelFor(
     // If dispatching count is less than max workers count then jobsPerGrp will be 1
     // Else it will be jobsPerGrp or jobsPerGrp + 1 depending on count equiv-distributable among workers
     u64 jobsPerGrp = count / grpCount;
-    jobsPerGrp += (count % grpCount) > 0;
+    jobsPerGrp += static_cast<u64>((count % grpCount) > 0);
 
     AwaitAllTasks<std::vector<DispatchAwaitableType>> allAwaits = dispatch(jobSys, callback, count - jobsPerGrp, jobPriority);
     for (u64 jobIdx = count - jobsPerGrp; jobIdx < count; ++jobIdx)

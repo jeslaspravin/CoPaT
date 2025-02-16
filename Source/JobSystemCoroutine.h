@@ -4,7 +4,7 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2024
+ *  Copyright (C) Jeslas Pravin, 2022-2025
  *  @jeslaspravin pravinjeslas@gmail.com
  *  License can be read in LICENSE file at this repository's root
  */
@@ -43,7 +43,8 @@ public:
 };
 
 /**
- * Used to yield current thread(Strictly in same job system)
+ * Used to yield current thread(Strictly in same job system).
+ * Yields only if current thread has more jobs.
  */
 struct YieldAwaiter
 {
@@ -52,10 +53,15 @@ public:
 
     constexpr bool await_ready() const noexcept { return false; }
     template <JobSystemPromiseType PromiseType>
-    void await_suspend(std::coroutine_handle<PromiseType> h, std::source_location srcLoc = std::source_location::current()) const noexcept
+    bool await_suspend(std::coroutine_handle<PromiseType> h, std::source_location srcLoc = std::source_location::current()) const noexcept
     {
         COPAT_ASSERT(h.promise().enqToJobSystem);
-        h.promise().enqToJobSystem->enqueueJob(h, h.promise().enqToJobSystem->getCurrentThreadType(), h.promise().jobPriority, srcLoc);
+        if (h.promise().enqToJobSystem->hasJob(h.promise().jobPriority))
+        {
+            h.promise().enqToJobSystem->enqueueJob(h, h.promise().enqToJobSystem->getCurrentThreadType(), h.promise().jobPriority, srcLoc);
+            return true;
+        }
+        return false;
     }
     constexpr void await_resume() const noexcept {}
 };
@@ -213,8 +219,8 @@ public:
 
                 /**
                  * Lock section here as we do not want FinalSuspendAwaiter::await_suspend to invalidate chainTailPtrCache
-                 * Contention here will be blocked longer only if FinalSuspendAwaiter::await_suspend is happening other trySetContinuation will
-                 * wait in CAS
+                 * Contention here will be blocked longer only if FinalSuspendAwaiter::await_suspend is happening other trySetContinuation
+                 * will wait in CAS
                  */
                 std::scoped_lock<SpinLock> cs(continuationLock);
 
@@ -303,7 +309,7 @@ public:
          * User provided JobSystem. First argument of coroutine function must be JobSystem & or JobSystem *
          */
         PromiseType()
-            : BasePromiseType(JobSystem::get(), Priority)
+            : BasePromiseType(getDefaultJobSystem(), Priority)
         {}
         /* For static functions */
         PromiseType(JobSystem &jobSystem, auto &&...)
@@ -319,7 +325,7 @@ public:
             : BasePromiseType(jobSystem, priority)
         {}
         PromiseType(EJobPriority priority, auto &&...)
-            : BasePromiseType(JobSystem::get(), priority)
+            : BasePromiseType(getDefaultJobSystem(), priority)
         {}
         /* For member functions */
         PromiseType(auto &, JobSystem &jobSystem, auto &&...)
@@ -335,10 +341,13 @@ public:
             : BasePromiseType(jobSystem, priority)
         {}
         PromiseType(auto &, EJobPriority priority, auto &&...)
-            : BasePromiseType(JobSystem::get(), priority)
+            : BasePromiseType(getDefaultJobSystem(), priority)
         {}
 
-        JobSystemTaskType get_return_object() noexcept { return JobSystemTaskType{ std::coroutine_handle<PromiseType>::from_promise(*this) }; }
+        JobSystemTaskType get_return_object() noexcept
+        {
+            return JobSystemTaskType{ std::coroutine_handle<PromiseType>::from_promise(*this) };
+        }
         auto initial_suspend(std::source_location srcLoc = std::source_location::current()) noexcept
         {
             if constexpr (EnqAtInitialSuspend)
@@ -433,7 +442,7 @@ public:
          * User provided JobSystem. First argument of coroutine function must be JobSystem & or JobSystem *
          */
         PromiseType()
-            : BasePromiseType(JobSystem::get(), Priority)
+            : BasePromiseType(getDefaultJobSystem(), Priority)
         {}
         /* For static functions */
         PromiseType(JobSystem &jobSystem, auto &&...)
@@ -449,7 +458,7 @@ public:
             : BasePromiseType(jobSystem, priority)
         {}
         PromiseType(EJobPriority priority, auto &&...)
-            : BasePromiseType(JobSystem::get(), priority)
+            : BasePromiseType(getDefaultJobSystem(), priority)
         {}
         /* For member functions */
         PromiseType(auto &, JobSystem &jobSystem, auto &&...)
@@ -465,10 +474,13 @@ public:
             : BasePromiseType(jobSystem, priority)
         {}
         PromiseType(auto &, EJobPriority priority, auto &&...)
-            : BasePromiseType(JobSystem::get(), priority)
+            : BasePromiseType(getDefaultJobSystem(), priority)
         {}
 
-        JobSystemTaskType get_return_object() noexcept { return JobSystemTaskType{ std::coroutine_handle<PromiseType>::from_promise(*this) }; }
+        JobSystemTaskType get_return_object() noexcept
+        {
+            return JobSystemTaskType{ std::coroutine_handle<PromiseType>::from_promise(*this) };
+        }
         auto initial_suspend(std::source_location srcLoc = std::source_location::current()) noexcept
         {
             if constexpr (EnqAtInitialSuspend)
@@ -539,7 +551,7 @@ public:
          * User provided JobSystem. First argument of coroutine function must be JobSystem & or JobSystem *
          */
         PromiseType()
-            : BasePromiseType(JobSystem::get(), Priority)
+            : BasePromiseType(getDefaultJobSystem(), Priority)
         {}
         /* For static functions */
         PromiseType(JobSystem &jobSystem, auto &&...)
@@ -555,7 +567,7 @@ public:
             : BasePromiseType(jobSystem, priority)
         {}
         PromiseType(EJobPriority priority, auto &&...)
-            : BasePromiseType(JobSystem::get(), priority)
+            : BasePromiseType(getDefaultJobSystem(), priority)
         {}
         /* For member functions */
         PromiseType(auto &, JobSystem &jobSystem, auto &&...)
@@ -571,7 +583,7 @@ public:
             : BasePromiseType(jobSystem, priority)
         {}
         PromiseType(auto &, EJobPriority priority, auto &&...)
-            : BasePromiseType(JobSystem::get(), priority)
+            : BasePromiseType(getDefaultJobSystem(), priority)
         {}
 
         JobSystemShareableTaskType get_return_object() noexcept
@@ -601,17 +613,22 @@ public:
     using promise_type = PromiseType;
 
     // If there is no coroutine then there is no need to wait as well
-    bool await_ready() const noexcept { return !ownerCoroutinePtr || std::coroutine_handle<>::from_address(ownerCoroutinePtr.get()).done(); }
+    bool await_ready() const noexcept
+    {
+        return !ownerCoroutinePtr || std::coroutine_handle<void>::from_address(ownerCoroutinePtr.get()).done();
+    }
     template <typename PromiseT>
     bool await_suspend(std::coroutine_handle<PromiseT> awaitingAtCoro) noexcept
     {
-        std::coroutine_handle<PromiseType> ownerCoroutine = std::coroutine_handle<>::from_address(ownerCoroutinePtr.get());
+        std::coroutine_handle ownerCoroutine = std::coroutine_handle<PromiseType>::from_address(ownerCoroutinePtr.get());
         return ownerCoroutine.promise().trySetContinuation(awaitingAtCoro);
     }
     RetTypeStorage::reference_type await_resume() const noexcept
     {
-        COPAT_ASSERT(ownerCoroutinePtr && ownerCoroutinePtr->promise().returnStore.isValid());
-        return ownerCoroutinePtr.promise().returnStore.get();
+        COPAT_ASSERT(ownerCoroutinePtr);
+        std::coroutine_handle ownerCoroutine = std::coroutine_handle<PromiseType>::from_address(ownerCoroutinePtr.get());
+        COPAT_ASSERT(ownerCoroutine.promise().returnStore.isValid());
+        return ownerCoroutine.promise().returnStore.get();
     }
 };
 
@@ -651,7 +668,7 @@ public:
          * User provided JobSystem. First argument of coroutine function must be JobSystem & or JobSystem *
          */
         PromiseType()
-            : BasePromiseType(JobSystem::get(), Priority)
+            : BasePromiseType(getDefaultJobSystem(), Priority)
         {}
         /* For static functions */
         PromiseType(JobSystem &jobSystem, auto &&...)
@@ -667,7 +684,7 @@ public:
             : BasePromiseType(jobSystem, priority)
         {}
         PromiseType(EJobPriority priority, auto &&...)
-            : BasePromiseType(JobSystem::get(), priority)
+            : BasePromiseType(getDefaultJobSystem(), priority)
         {}
         /* For member functions */
         PromiseType(auto &, JobSystem &jobSystem, auto &&...)
@@ -683,7 +700,7 @@ public:
             : BasePromiseType(jobSystem, priority)
         {}
         PromiseType(auto &, EJobPriority priority, auto &&...)
-            : BasePromiseType(JobSystem::get(), priority)
+            : BasePromiseType(getDefaultJobSystem(), priority)
         {}
 
         JobSystemShareableTaskType get_return_object() noexcept
@@ -709,11 +726,14 @@ public:
     using promise_type = PromiseType;
 
     // If there is no coroutine then there is no need to wait as well
-    bool await_ready() const noexcept { return !ownerCoroutinePtr || std::coroutine_handle<>::from_address(ownerCoroutinePtr.get()).done(); }
+    bool await_ready() const noexcept
+    {
+        return !ownerCoroutinePtr || std::coroutine_handle<void>::from_address(ownerCoroutinePtr.get()).done();
+    }
     template <typename PromiseT>
     bool await_suspend(std::coroutine_handle<PromiseT> awaitingAtCoro) noexcept
     {
-        std::coroutine_handle<PromiseType> ownerCoroutine = std::coroutine_handle<>::from_address(ownerCoroutinePtr.get());
+        std::coroutine_handle ownerCoroutine = std::coroutine_handle<PromiseType>::from_address(ownerCoroutinePtr.get());
         return ownerCoroutine.promise().trySetContinuation(awaitingAtCoro);
     }
     constexpr void await_resume() const {}

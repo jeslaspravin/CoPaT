@@ -4,7 +4,7 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2024
+ *  Copyright (C) Jeslas Pravin, 2022-2025
  *  @jeslaspravin pravinjeslas@gmail.com
  *  License can be read in LICENSE file at this repository's root
  */
@@ -91,6 +91,17 @@ public:
     /* To not dead lock at shutdown, Check JobSystem::shutdown for more details */
     [[nodiscard]] bool tryShutdown() noexcept;
 
+    /* true, if there is job in any priority <= current priority */
+    bool hasJob(EJobThreadType enqueueToThread, EJobPriority priority) const noexcept
+    {
+        const u32 threadIdx = threadTypeToIdx(enqueueToThread);
+        bool bAnyJobs = false;
+        for (EJobPriority p = Priority_Critical; p <= priority; p = EJobPriority(p + 1))
+        {
+            bAnyJobs = bAnyJobs || !getThreadJobsQueue(threadIdx, p).empty();
+        }
+        return bAnyJobs;
+    }
     void enqueueJob(
         std::coroutine_handle<> coro, EJobThreadType enqueueToThread, EJobPriority priority, SpecialQHazardToken *fromThreadTokens
     ) noexcept
@@ -148,6 +159,10 @@ private:
     {
         return specialQueues[pAndTTypeToIdx(threadIdx, priority)];
     }
+    const SpecialThreadQueueType &getThreadJobsQueue(u32 threadIdx, EJobPriority priority) const noexcept
+    {
+        return specialQueues[pAndTTypeToIdx(threadIdx, priority)];
+    }
 
     template <u32 Idx>
     void runSpecialThread() noexcept;
@@ -172,6 +187,7 @@ public:
     void run() noexcept {}
     [[nodiscard]] bool tryShutdown() noexcept { return true; }
 
+    bool hasJob(EJobThreadType, EJobPriority) const noexcept { return false; }
     void enqueueJob(std::coroutine_handle<>, EJobThreadType, EJobPriority, SpecialQHazardToken *) noexcept {}
     void *dequeueJob(u32, EJobPriority) noexcept { return nullptr; }
 
@@ -222,6 +238,8 @@ public:
     /* To not dead lock at shutdown, Check JobSystem::shutdown for more details */
     [[nodiscard]] bool tryShutdown() noexcept;
 
+    /* true, if there is job in any priority <= current priority */
+    bool hasJob(u32 threadIdx, EJobPriority priority, WorkerQHazardToken *fromThreadTokens) const noexcept;
     void enqueueJob(std::coroutine_handle<> coro, EJobPriority priority, WorkerQHazardToken *fromThreadTokens) noexcept;
     void *dequeueJob(u32 threadIdx, EJobPriority priority, WorkerQHazardToken *fromThreadTokens) noexcept;
     void *stealJob(u32 stealFromIdx, EJobPriority stealPriority, WorkerQHazardToken *fromThreadTokens) noexcept;
@@ -282,6 +300,8 @@ public:
     /* To not dead lock at shutdown, Check JobSystem::shutdown for more details */
     [[nodiscard]] bool tryShutdown() noexcept;
 
+    /* true, if there is job in any priority <= current priority */
+    bool hasJob(EJobPriority priority) const noexcept;
     void enqueueJob(std::coroutine_handle<> coro, EJobPriority priority, SpecialQHazardToken *fromThreadTokens) noexcept;
     void *dequeueJob(EJobPriority priority) noexcept;
 
@@ -292,10 +312,11 @@ public:
 
 private:
     SpecialThreadQueueType &getThreadJobsQueue(EJobPriority priority);
+    const SpecialThreadQueueType &getThreadJobsQueue(EJobPriority priority) const;
 };
 
-#define THREADCONSTRAINT_ENUM_TO_FLAGBIT(ConstraintName)                                                                                       \
-    (copat::JobSystem::BitMasksStart << (copat::JobSystem::##ConstraintName - copat::JobSystem::BitMasksStart))
+#define THREADCONSTRAINT_ENUM_TO_FLAGBIT(ConstraintName)                                                                                     \
+    (copat::JobSystem::BitMasksStart << (copat::JobSystem::ConstraintName - copat::JobSystem::BitMasksStart))
 #define NOSPECIALTHREAD_ENUM_TO_FLAGBIT(ThreadType) THREADCONSTRAINT_ENUM_TO_FLAGBIT(No##ThreadType)
 
 class COPAT_EXPORT_SYM JobSystem
@@ -314,9 +335,9 @@ public:
         /* Main thread tick function type, This function gets ticked in main thread for every loop and then main job queue will be emptied */
         MainThreadTickFunc mainThreadTick;
         /* Must be synchronized externally */
-        TlDataCreateFunc createTlData;
+        TlDataCreateFunc createTlData = {};
         /* Must be synchronized externally */
-        TlDataDeleteFunc deleteTlData;
+        TlDataDeleteFunc deleteTlData = {};
     };
 
     struct PerThreadData
@@ -418,6 +439,9 @@ public:
     void shutdown() noexcept;
     bool isRunning() const noexcept { return bExitMain[1].test(std::memory_order::relaxed); }
 
+    /* true, if there is job in any priority <= current priority in current thread.
+     * Not allowed to inspect other threads due to MpSc queues. */
+    bool hasJob(EJobPriority priority) const noexcept;
     void enqueueJob(
         std::coroutine_handle<> coro, EJobThreadType enqueueToThread = EJobThreadType::WorkerThreads,
         EJobPriority priority = EJobPriority::Priority_Normal, std::source_location src = std::source_location::current()
@@ -440,7 +464,7 @@ public:
         }
         return 0u;
     }
-    EJobThreadType enqToThreadType(EJobThreadType forThreadType) const { return enqIndirection[u32(forThreadType)]; }
+    EJobThreadType enqToThreadType(EJobThreadType forThreadType) const noexcept { return enqIndirection[u32(forThreadType)]; }
     bool isInThread(EJobThreadType threadType) const { return getCurrentThreadType() == enqToThreadType(threadType); }
     void *getTlUserData() const
     {
@@ -451,7 +475,7 @@ public:
         return nullptr;
     }
 
-    u32 getWorkersCount() const { return workerThreadsPool.getWorkersCount(); }
+    u32 getWorkersCount() const noexcept { return workerThreadsPool.getWorkersCount(); }
     u32 getTotalThreadsCount() const { return getWorkersCount() + SpecialThreadsPoolType::COUNT + 1 /* Main thread */; }
 
     const TChar *getJobSystemName() const { return jsName; }

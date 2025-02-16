@@ -4,7 +4,7 @@
  * \author Jeslas
  * \date June 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2024
+ *  Copyright (C) Jeslas Pravin, 2022-2025
  *  @jeslaspravin pravinjeslas@gmail.com
  *  License can be read in LICENSE file at this repository's root
  */
@@ -83,7 +83,7 @@ public:
     using RetTypeRef = std::conditional_t<std::is_fundamental_v<ReturnType>, ReturnType, ReturnType &>;
 
     // Just copying the callback so a copy exists inside dispatch
-    static AwaitableType dispatchOneTask(JobSystem &jobSys, EJobPriority jobPriority, FuncType callback, u64 jobIdx) noexcept
+    static AwaitableType dispatchOneTask(JobSystem &, EJobPriority, FuncType callback, u64 jobIdx) noexcept
     {
         std::vector<ReturnType> retVal;
         /* If the return type is awaitable then await for that as well */
@@ -99,7 +99,7 @@ public:
         }
         co_return retVal;
     }
-    static AwaitableType dispatchTaskGroup(JobSystem &jobSys, EJobPriority jobPriority, FuncType callback, u64 fromJobIdx, u64 count) noexcept
+    static AwaitableType dispatchTaskGroup(JobSystem &, EJobPriority, FuncType callback, u64 fromJobIdx, u64 count) noexcept
     {
         std::vector<ReturnType> retVal;
         retVal.reserve(count);
@@ -140,7 +140,7 @@ public:
          */
         if (jobSys->enqToThreadType(EJobThreadType::WorkerThreads) != EJobThreadType::WorkerThreads)
         {
-            dispatchedJobs.emplace_back(std::move(dispatchTaskGroup(*jobSys, jobPriority, callback, 0, count)));
+            dispatchedJobs.emplace_back(dispatchTaskGroup(*jobSys, jobPriority, callback, 0, count));
             return awaitAllTasks(std::move(dispatchedJobs));
         }
 
@@ -152,7 +152,7 @@ public:
             dispatchedJobs.reserve(count);
             for (u64 i = 0; i < count; ++i)
             {
-                dispatchedJobs.emplace_back(std::move(dispatchOneTask(*jobSys, jobPriority, callback, i)));
+                dispatchedJobs.emplace_back(dispatchOneTask(*jobSys, jobPriority, callback, i));
             }
         }
         else
@@ -163,13 +163,13 @@ public:
             for (u32 i = 0; i < grpsWithMoreJobCount; ++i)
             {
                 // Add one more job for all grps with more jobs
-                dispatchedJobs.emplace_back(std::move(dispatchTaskGroup(*jobSys, jobPriority, callback, jobIdx, jobsPerGrp + 1)));
+                dispatchedJobs.emplace_back(dispatchTaskGroup(*jobSys, jobPriority, callback, jobIdx, jobsPerGrp + 1));
                 jobIdx += jobsPerGrp + 1;
             }
 
             for (u32 i = grpsWithMoreJobCount; i < grpCount; ++i)
             {
-                dispatchedJobs.emplace_back(std::move(dispatchTaskGroup(*jobSys, jobPriority, callback, jobIdx, jobsPerGrp)));
+                dispatchedJobs.emplace_back(dispatchTaskGroup(*jobSys, jobPriority, callback, jobIdx, jobsPerGrp));
                 jobIdx += jobsPerGrp;
             }
         }

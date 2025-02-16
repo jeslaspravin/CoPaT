@@ -4,7 +4,7 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2024
+ *  Copyright (C) Jeslas Pravin, 2022-2025
  *  @jeslaspravin pravinjeslas@gmail.com
  *  License can be read in LICENSE file at this repository's root
  */
@@ -58,10 +58,10 @@ JobSystem::JobSystem(u32 inWorkerCount, u32 constraints, const TChar *jobSysName
     setJobSystemName(jobSysName);
 }
 
-#define NO_SPECIALTHREADS_INDIR_SETUP(ThreadType) enqIndirection[u32(EJobThreadType::##ThreadType)] = EJobThreadType::MainThread;
-#define SPECIALTHREAD_INDIR_SETUP(ThreadType)                                                                                                  \
-    enqIndirection[u32(EJobThreadType::##ThreadType)]                                                                                          \
-        = (threadingConstraints & NOSPECIALTHREAD_ENUM_TO_FLAGBIT(ThreadType)) ? EJobThreadType::MainThread : EJobThreadType::##ThreadType;
+#define NO_SPECIALTHREADS_INDIR_SETUP(ThreadType) enqIndirection[u32(EJobThreadType::ThreadType)] = EJobThreadType::MainThread;
+#define SPECIALTHREAD_INDIR_SETUP(ThreadType)                                                                                                \
+    enqIndirection[u32(EJobThreadType::##ThreadType)]                                                                                        \
+        = (threadingConstraints & NOSPECIALTHREAD_ENUM_TO_FLAGBIT(ThreadType)) ? EJobThreadType::MainThread : EJobThreadType::ThreadType;
 
 void JobSystem::initialize(InitInterface initIxx, void *inUserData) noexcept
 {
@@ -78,7 +78,8 @@ void JobSystem::initialize(InitInterface initIxx, void *inUserData) noexcept
     }
 
     EThreadingConstraint tConstraint = getThreadingConstraint(threadingConstraints);
-    const bool bEnableSpecials = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoSpecialThreads);
+    const bool bEnableSpecials
+        = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoSpecialThreads);
     const bool bEnableWorkers = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoWorkerThreads);
     const bool bEnableSupervisor
         = (tConstraint != EThreadingConstraint::SingleThreaded
@@ -174,7 +175,8 @@ void JobSystem::shutdown() noexcept
     bExitMain[1].test_and_set(std::memory_order::release);
 
     EThreadingConstraint tConstraint = getThreadingConstraint(threadingConstraints);
-    const bool bEnableSpecials = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoSpecialThreads);
+    const bool bEnableSpecials
+        = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoSpecialThreads);
     const bool bEnableWorkers = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoWorkerThreads);
     const bool bEnableSupervisor
         = (tConstraint != EThreadingConstraint::SingleThreaded
@@ -214,9 +216,47 @@ void JobSystem::shutdown() noexcept
     CoPaTMemAlloc::memFree(jsName);
 }
 
+bool JobSystem::hasJob(EJobPriority priority) const noexcept
+{
+    PerThreadData *threadData = getPerThreadData();
+    if (threadData == nullptr)
+    {
+        return false;
+    }
+    const EJobThreadType thread = threadData->threadType;
+
+    switch (thread)
+    {
+    case copat::EJobThreadType::MainThread:
+    {
+        COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("MainHasJob"));
+        return !mainThreadJobs[priority].empty();
+    }
+    case copat::EJobThreadType::WorkerThreads:
+    {
+        COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("WorkerHasJob"));
+        return workerThreadsPool.hasJob(threadData->threadIdx, priority, threadData->workerQsTokens);
+    }
+    case copat::EJobThreadType::Supervisor:
+    {
+        COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("SupervisorHasJob"));
+        return supervisorThread.hasJob(priority);
+    }
+    case copat::EJobThreadType::MaxThreads:
+        COPAT_ASSERT(false);
+        break;
+    /* Everything else could be handled as special thread */
+    default:
+    {
+        COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("SpecialHasJob"));
+        return specialThreadsPool.hasJob(thread, priority);
+    }
+    }
+    return false;
+}
 void JobSystem::enqueueJob(
     std::coroutine_handle<> coro, EJobThreadType enqueueToThread /*= EJobThreadType::WorkerThreads*/,
-    EJobPriority priority /*= EJobPriority::Priority_Normal*/, std::source_location src
+    EJobPriority priority /*= EJobPriority::Priority_Normal*/, [[maybe_unused]] std::source_location src
 ) noexcept
 {
     PerThreadData *threadData = getPerThreadData();
@@ -253,8 +293,6 @@ void JobSystem::enqueueJob(
             .enqAtSrc = src,
         });
     }
-#else
-    (src);
 #endif
 
     switch (redirThread)
@@ -293,7 +331,7 @@ void JobSystem::enqueueJob(
 
         if (threadData)
         {
-            supervisorThread.enqueueJob(coro, priority, &threadData->supervisorTokens[priority]);
+            supervisorThread.enqueueJob(coro, priority, threadData->supervisorTokens);
         }
         else
         {
@@ -326,7 +364,8 @@ void JobSystem::enqueueJob(
 JobSystem::PerThreadData::PerThreadData(SpecialThreadQueueType *mainQs, JobSystemThread &supervisorThread)
     : threadType(EJobThreadType::WorkerThreads)
     , threadIdx(0)
-    , mainQTokens{ mainQs[Priority_Critical].getHazardToken(), mainQs[Priority_Normal].getHazardToken(), mainQs[Priority_Low].getHazardToken() }
+    , mainQTokens{ mainQs[Priority_Critical].getHazardToken(), mainQs[Priority_Normal].getHazardToken(),
+                   mainQs[Priority_Low].getHazardToken() }
     , supervisorTokens{ supervisorThread.getEnqToken(Priority_Critical), supervisorThread.getEnqToken(Priority_Normal),
                         supervisorThread.getEnqToken(Priority_Low) }
     , workerQsTokens(nullptr)
@@ -753,6 +792,16 @@ bool WorkerThreadsPool::tryShutdown() noexcept
     return true;
 }
 
+bool WorkerThreadsPool::hasJob(u32 threadIdx, EJobPriority priority, WorkerQHazardToken *fromThreadTokens) const noexcept
+{
+    bool bAnyJobs = false;
+    for (EJobPriority p = Priority_Critical; p <= priority; p = EJobPriority(p + 1))
+    {
+        const u32 qIdx = pAndTTypeToIdx(threadIdx, priority);
+        bAnyJobs = bAnyJobs || !workerQs[qIdx].empty(fromThreadTokens[qIdx]);
+    }
+    return bAnyJobs;
+}
 void WorkerThreadsPool::enqueueJob(std::coroutine_handle<> coro, EJobPriority priority, WorkerQHazardToken *fromThreadTokens) noexcept
 {
     COPAT_ASSERT(!allWorkersExitEvent.try_wait());
@@ -863,6 +912,15 @@ bool JobSystemThread::tryShutdown() noexcept
     return exitEvent.try_wait();
 }
 
+bool JobSystemThread::hasJob(EJobPriority priority) const noexcept
+{
+    bool bAnyJobs = false;
+    for (EJobPriority p = Priority_Critical; p <= priority; p = EJobPriority(p + 1))
+    {
+        bAnyJobs = bAnyJobs || !getThreadJobsQueue(p).empty();
+    }
+    return bAnyJobs;
+}
 void JobSystemThread::enqueueJob(std::coroutine_handle<> coro, EJobPriority priority, SpecialQHazardToken *fromThreadTokens) noexcept
 {
     /* We must not enqueue at shutdown */
@@ -885,6 +943,7 @@ void JobSystemThread::onJobSytemThreadExit() { exitEvent.count_down(); }
 
 SpecialQHazardToken JobSystemThread::getEnqToken(EJobPriority priority) { return getThreadJobsQueue(priority).getHazardToken(); }
 SpecialThreadQueueType &JobSystemThread::getThreadJobsQueue(EJobPriority priority) { return queues[priority]; }
+const SpecialThreadQueueType &JobSystemThread::getThreadJobsQueue(EJobPriority priority) const { return queues[priority]; }
 
 } // namespace copat
 
