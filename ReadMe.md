@@ -405,6 +405,27 @@ If you ever find yourself in a head scratching situation where you are trying to
 
 ***Special thanks to my wife because she is the one saw me scratching my head, pulling my hair out and spending quater a day figuring out a bug and suggested to include my debugging code as a feature***
 
+## Waiting for all workers to reach a sync point
+
+A special helper is added to synchronize across all worker threads without using special threading primitives. Use `JobSystem::waitForThreadSync` to wait for any other thread to reach current sync point.
+This helps in situations where you want to synchronize across all threads but do not want to split coroutines into several chunks and have awaiters in between. Or it even helps reduce custom piece of code.
+
+```cpp
+copat::JobSystemWorkerThreadTask testPriorityStub(u32 dispatchIdx, copat::EJobPriority priority, std::counting_semaphore<256>& sema)
+{
+    std::string str = std::format("{}: {}\n", copat::PlatformThreadingFuncs::getCurrentThreadName(), PriorityNames[priority]);
+    std::cout << str;
+
+    if (dispatchIdx == 0)
+    {
+        copat::JobSystem::get()->waitForThreadSync(copat::EJobThreadType::WorkerThreads);
+    }
+    std::cout << "All worker threads are atleast here!";
+
+    co_return;
+}
+```
+
 ## References
 
 - [cppcoro] - Wonderful library containing several useful codes for references
