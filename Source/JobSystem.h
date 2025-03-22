@@ -102,6 +102,7 @@ public:
         }
         return bAnyJobs;
     }
+    void waitForThreadSync(EJobThreadType enqueueToThread, SpecialQHazardToken *fromThreadTokens) noexcept;
     void enqueueJob(
         std::coroutine_handle<> coro, EJobThreadType enqueueToThread, EJobPriority priority, SpecialQHazardToken *fromThreadTokens
     ) noexcept
@@ -110,7 +111,7 @@ public:
         COPAT_ASSERT(!allSpecialsExitEvent.try_wait());
         const u32 threadIdx = threadTypeToIdx(enqueueToThread);
         const u32 queueArrayIdx = pAndTTypeToIdx(threadIdx, priority);
-        if (fromThreadTokens)
+        if (fromThreadTokens != nullptr)
         {
             specialQueues[queueArrayIdx].enqueue(coro.address(), fromThreadTokens[queueArrayIdx]);
         }
@@ -188,6 +189,7 @@ public:
     [[nodiscard]] bool tryShutdown() noexcept { return true; }
 
     bool hasJob(EJobThreadType, EJobPriority) const noexcept { return false; }
+    void waitForThreadSync(EJobThreadType, SpecialQHazardToken *) noexcept {}
     void enqueueJob(std::coroutine_handle<>, EJobThreadType, EJobPriority, SpecialQHazardToken *) noexcept {}
     void *dequeueJob(u32, EJobPriority) noexcept { return nullptr; }
 
@@ -219,7 +221,7 @@ private:
     /* The index of the queue to which next enqueue job pushes the job into */
     std::atomic_uint_fast32_t nextEnqToQ{ 0 };
 
-    std::atomic_int_fast32_t hazardTokensTop{ 0 };
+    std::atomic_uint_fast32_t hazardTokensTop{ 0 };
     WorkerQHazardToken *hazardTokens = nullptr;
     /* Allocations for all worker queues, each worker's job wait events and each thread's enq/deq tokens */
     void *workerAllocations = nullptr;
@@ -240,6 +242,8 @@ public:
 
     /* true, if there is job in any priority <= current priority */
     bool hasJob(u32 threadIdx, EJobPriority priority, WorkerQHazardToken *fromThreadTokens) const noexcept;
+    /* skipThreadIdx if invalid all worker threads will be waited for */
+    void waitForThreadSync(WorkerQHazardToken *fromThreadTokens, u32 skipThreadIdx) noexcept;
     void enqueueJob(std::coroutine_handle<> coro, EJobPriority priority, WorkerQHazardToken *fromThreadTokens) noexcept;
     void *dequeueJob(u32 threadIdx, EJobPriority priority, WorkerQHazardToken *fromThreadTokens) noexcept;
     void *stealJob(u32 stealFromIdx, EJobPriority stealPriority, WorkerQHazardToken *fromThreadTokens) noexcept;
@@ -302,6 +306,7 @@ public:
 
     /* true, if there is job in any priority <= current priority */
     bool hasJob(EJobPriority priority) const noexcept;
+    void waitForThreadSync(SpecialQHazardToken *fromThreadTokens) noexcept;
     void enqueueJob(std::coroutine_handle<> coro, EJobPriority priority, SpecialQHazardToken *fromThreadTokens) noexcept;
     void *dequeueJob(EJobPriority priority) noexcept;
 
@@ -430,7 +435,7 @@ public:
     /* Overload to match the previous initialize */
     void initialize(MainThreadTickFunc &&mainTickFunc, void *inUserData) noexcept
     {
-        initialize(InitInterface{ .mainThreadTick = std::forward<MainThreadTickFunc>(mainTickFunc) }, inUserData);
+        initialize(InitInterface{ .mainThreadTick = std::move(mainTickFunc) }, inUserData);
     }
     /* Initialize with no main or user data */
     void initialize() noexcept { initialize(InitInterface{}, nullptr); }
@@ -439,6 +444,10 @@ public:
     void shutdown() noexcept;
     bool isRunning() const noexcept { return bExitMain[1].test(std::memory_order::relaxed); }
 
+    /* Helper to wait for a thread/job system to reach a this point. Will return immediately if called on this thread
+     * Jobs added after this point will not be waited on.
+     * Be very careful when waiting for MainThread as there is high chance for dead lock in that case. */
+    void waitForThreadSync(EJobThreadType waitForThread) noexcept;
     /* true, if there is job in any priority <= current priority in current thread.
      * Not allowed to inspect other threads due to MpSc queues. */
     bool hasJob(EJobPriority priority) const noexcept;
@@ -616,9 +625,9 @@ template <u32 SpecialThreadsCount>
 template <u32 Idx>
 void SpecialThreadsPool<SpecialThreadsCount>::runSpecialThread() noexcept
 {
-    constexpr static const EJobThreadType threadType = idxToThreadType(Idx);
-    INTERNAL_DoSpecialThreadFuncType func = &JobSystem::doSpecialThreadJobs<Idx, threadType>;
-    INTERNAL_runSpecialThread(func, threadType, Idx, ownerJobSystem);
+    constexpr static const EJobThreadType THREAD_TYPE = idxToThreadType(Idx);
+    INTERNAL_DoSpecialThreadFuncType func = &JobSystem::doSpecialThreadJobs<Idx, THREAD_TYPE>;
+    INTERNAL_runSpecialThread(func, THREAD_TYPE, Idx, ownerJobSystem);
 }
 
 template <u32 SpecialThreadsCount>

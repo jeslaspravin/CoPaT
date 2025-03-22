@@ -4,7 +4,7 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2024
+ *  Copyright (C) Jeslas Pravin, 2022-2025
  *  @jeslaspravin pravinjeslas@gmail.com
  *  License can be read in LICENSE file at this repository's root
  */
@@ -178,10 +178,10 @@
 #ifdef OVERRIDE_PRINTF
 #define COPAT_PRINTF(TCharArray, Fmt, ...) OVERRIDE_PRINTF(TCharArray, Fmt, __VA_ARGS__)
 #else
-#define COPAT_PRINTF(TCharArray, Fmt, ...)                                                                                                     \
-    [&]<u64 Len>(TChar(&outBuffer)[Len])                                                                                                       \
-    {                                                                                                                                          \
-        return std::snprintf(outBuffer, Len, Fmt, __VA_ARGS__);                                                                                \
+#define COPAT_PRINTF(TCharArray, Fmt, ...)                                                                                                   \
+    [&]<u64 Len>(TChar(&outBuffer)[Len])                                                                                                     \
+    {                                                                                                                                        \
+        return std::snprintf(static_cast<TChar *>(outBuffer), Len, Fmt, __VA_ARGS__);                                                        \
     }(TCharArray)
 #endif
 
@@ -222,7 +222,7 @@
 #if COPAT_DEBUG_JOBS
 
 #ifdef OVERRIDE_DEBUG_JOBS_DUMP
-#define COPAT_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount)                                                                    \
+#define COPAT_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount)                                                                  \
     OVERRIDE_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount)
 #else
 #define COPAT_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount)

@@ -19,7 +19,7 @@ COPAT_NS_INLINED
 namespace copat
 {
 
-void getCoreCount(u32 &outCoreCount, u32 &outLogicalProcessorCount)
+static void getCoreCount(u32 &outCoreCount, u32 &outLogicalProcessorCount)
 {
     PlatformThreadingFuncs::getCoreCount(outCoreCount, outLogicalProcessorCount);
     // Just a backup if user did not provide an implementation
@@ -30,7 +30,7 @@ void getCoreCount(u32 &outCoreCount, u32 &outLogicalProcessorCount)
     }
 }
 
-JobSystem::EThreadingConstraint getThreadingConstraint(u32 constraints)
+static JobSystem::EThreadingConstraint getThreadingConstraint(u32 constraints)
 {
     return JobSystem::EThreadingConstraint(constraints & (JobSystem::BitMasksStart - 1));
 }
@@ -67,7 +67,7 @@ void JobSystem::initialize(InitInterface initIxx, void *inUserData) noexcept
 {
     COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatInit"));
 
-    if (!singletonInstance)
+    if (singletonInstance == nullptr)
     {
         singletonInstance = this;
     }
@@ -77,7 +77,7 @@ void JobSystem::initialize(InitInterface initIxx, void *inUserData) noexcept
         return;
     }
 
-    EThreadingConstraint tConstraint = getThreadingConstraint(threadingConstraints);
+    const EThreadingConstraint tConstraint = getThreadingConstraint(threadingConstraints);
     const bool bEnableSpecials
         = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoSpecialThreads);
     const bool bEnableWorkers = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoWorkerThreads);
@@ -151,7 +151,7 @@ void JobSystem::initialize(InitInterface initIxx, void *inUserData) noexcept
     }
     TChar threadNameBuffer[257] = { 0 };
     COPAT_PRINTF(threadNameBuffer, COPAT_TCHAR("%s_MainThread"), jsName);
-    PlatformThreadingFuncs::setCurrentThreadName(threadNameBuffer);
+    PlatformThreadingFuncs::setCurrentThreadName(static_cast<const TChar *>(threadNameBuffer));
     PlatformThreadingFuncs::setCurrentThreadProcessor(0, 0);
     createPerThreadData(EJobThreadType::MainThread, 0);
 }
@@ -166,7 +166,10 @@ void JobSystem::shutdown() noexcept
     COPAT_ASSERT(mainThreadTlData && mainThreadTlData->threadType == EJobThreadType::MainThread);
     /* In order to prevent job en queuing back into one of the shutdown thread, redirect everything to main thread.
      * Will be slow but would not crash. Needs repeated draining of main thread queue to avoid dead lock. */
-    std::fill(enqIndirection, enqIndirection + u32(EJobThreadType::MaxThreads), EJobThreadType::MainThread);
+    std::fill(
+        static_cast<EJobThreadType *>(enqIndirection), static_cast<EJobThreadType *>(enqIndirection) + u32(EJobThreadType::MaxThreads),
+        EJobThreadType::MainThread
+    );
     /* Clear main thread ticker, we do not want that getting called any more */
     mainThreadTick = {};
 
@@ -174,7 +177,7 @@ void JobSystem::shutdown() noexcept
     bExitMain[0].test_and_set(std::memory_order::relaxed);
     bExitMain[1].test_and_set(std::memory_order::release);
 
-    EThreadingConstraint tConstraint = getThreadingConstraint(threadingConstraints);
+    const EThreadingConstraint tConstraint = getThreadingConstraint(threadingConstraints);
     const bool bEnableSpecials
         = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoSpecialThreads);
     const bool bEnableWorkers = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoWorkerThreads);
@@ -214,6 +217,142 @@ void JobSystem::shutdown() noexcept
     }
 
     CoPaTMemAlloc::memFree(jsName);
+}
+
+/**
+ * Coroutine required to get coroutine handle for manual enqueueing.
+ */
+struct DummyCoroutine : public std::suspend_never
+{
+public:
+    struct promise_type;
+    std::coroutine_handle<promise_type> coro;
+
+    struct promise_type
+    {
+    public:
+        DummyCoroutine get_return_object() noexcept
+        {
+            return DummyCoroutine{ .coro = std::coroutine_handle<promise_type>::from_promise(*this) };
+        }
+        constexpr std::suspend_always initial_suspend() const noexcept { return {}; }
+        constexpr std::suspend_never final_suspend() const noexcept { return {}; }
+        constexpr void return_void() const noexcept {}
+        void unhandled_exception() const noexcept { COPAT_UNHANDLED_EXCEPT(); }
+    };
+};
+template <u32 SpecialThreadsCount>
+void copat::SpecialThreadsPool<SpecialThreadsCount>::waitForThreadSync(
+    EJobThreadType enqueueToThread, SpecialQHazardToken *fromThreadTokens
+) noexcept
+{
+    /* We must not enqueue at shutdown */
+    COPAT_ASSERT(!allSpecialsExitEvent.try_wait());
+    std::atomic_flag waitFlag;
+    const DummyCoroutine coroHndl = [](std::atomic_flag &waitFlag) -> DummyCoroutine
+    {
+        waitFlag.test_and_set(std::memory_order::relaxed);
+        waitFlag.notify_one();
+        co_return;
+    }(waitFlag);
+
+    const u32 threadIdx = threadTypeToIdx(enqueueToThread);
+    const u32 queueArrayIdx = pAndTTypeToIdx(threadIdx, EJobPriority::Priority_Low);
+    if (fromThreadTokens != nullptr)
+    {
+        specialQueues[queueArrayIdx].enqueue(coroHndl.coro.address(), fromThreadTokens[queueArrayIdx]);
+    }
+    else
+    {
+        specialQueues[queueArrayIdx].enqueue(coroHndl.coro.address());
+    }
+
+    specialJobEvents[threadIdx].notify();
+    waitFlag.wait(false, std::memory_order::relaxed);
+}
+void JobSystem::waitForThreadSync(EJobThreadType waitForThread) noexcept
+{
+    PerThreadData *threadData = getPerThreadData();
+    const EJobThreadType redirThread = enqToThreadType(waitForThread);
+    /* Return if we are in same thread. In worker thread we can skip current thread wait */
+    if (isInThread(redirThread) && redirThread != EJobThreadType::WorkerThreads)
+    {
+        return;
+    }
+
+    switch (redirThread)
+    {
+    case copat::EJobThreadType::MainThread:
+    {
+        COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatWaitForMain"));
+        std::atomic_flag waitFlag;
+        const DummyCoroutine coroHndl = [](std::atomic_flag &waitFlag) -> DummyCoroutine
+        {
+            waitFlag.test_and_set(std::memory_order::relaxed);
+            waitFlag.notify_one();
+            co_return;
+        }(waitFlag);
+
+        if (threadData != nullptr)
+        {
+            mainThreadJobs[EJobPriority::Priority_Low].enqueue(coroHndl.coro.address(), threadData->mainQTokens[EJobPriority::Priority_Low]);
+        }
+        else
+        {
+            mainThreadJobs[EJobPriority::Priority_Low].enqueue(coroHndl.coro.address());
+        }
+        waitFlag.wait(false, std::memory_order::relaxed);
+        break;
+    }
+    case copat::EJobThreadType::WorkerThreads:
+    {
+        COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatWaitForWorker"));
+
+        if (threadData != nullptr)
+        {
+            const u32 skipThreadIdx = isInThread(copat::EJobThreadType::WorkerThreads) ? threadData->threadIdx : ~0u;
+            workerThreadsPool.waitForThreadSync(threadData->workerQsTokens, skipThreadIdx);
+        }
+        else
+        {
+            workerThreadsPool.waitForThreadSync(nullptr, ~0u);
+        }
+        break;
+    }
+    case copat::EJobThreadType::Supervisor:
+    {
+        COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatWaitForSupervisor"));
+
+        if (threadData != nullptr)
+        {
+            supervisorThread.waitForThreadSync(threadData->supervisorTokens);
+        }
+        else
+        {
+            supervisorThread.waitForThreadSync(nullptr);
+        }
+        break;
+    }
+    case copat::EJobThreadType::MaxThreads:
+        COPAT_ASSERT(false);
+        break;
+    /* Everything else could be handled as special thread */
+    default:
+    {
+        COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatWaitForSpecial"));
+        if (threadData != nullptr)
+        {
+            // Special thread queue token must not be null in this case
+            COPAT_ASSERT(threadData->specialQsTokens);
+            specialThreadsPool.waitForThreadSync(redirThread, threadData->specialQsTokens);
+        }
+        else
+        {
+            specialThreadsPool.waitForThreadSync(redirThread, nullptr);
+        }
+        break;
+    }
+    }
 }
 
 bool JobSystem::hasJob(EJobPriority priority) const noexcept
@@ -301,7 +440,7 @@ void JobSystem::enqueueJob(
     {
         COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatEnqueueToMain"));
 
-        if (threadData)
+        if (threadData != nullptr)
         {
             mainThreadJobs[priority].enqueue(coro.address(), threadData->mainQTokens[priority]);
         }
@@ -315,7 +454,7 @@ void JobSystem::enqueueJob(
     {
         COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatEnqueueToWorker"));
 
-        if (threadData)
+        if (threadData != nullptr)
         {
             workerThreadsPool.enqueueJob(coro, priority, threadData->workerQsTokens);
         }
@@ -329,9 +468,9 @@ void JobSystem::enqueueJob(
     {
         COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatEnqueueToSupervisor"));
 
-        if (threadData)
+        if (threadData != nullptr)
         {
-            supervisorThread.enqueueJob(coro, priority, threadData->supervisorTokens);
+            supervisorThread.enqueueJob(coro, priority, static_cast<SpecialQHazardToken *>(threadData->supervisorTokens));
         }
         else
         {
@@ -346,7 +485,7 @@ void JobSystem::enqueueJob(
     default:
     {
         COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatEnqueueToSpecial"));
-        if (threadData)
+        if (threadData != nullptr)
         {
             // Special thread queue token must not be null in this case
             COPAT_ASSERT(threadData->specialQsTokens);
@@ -378,7 +517,7 @@ thread_local JobSystem *tl_DUMP_JOBSYSTEM_PTR = nullptr;
 #endif
 copat::JobSystem::PerThreadData &JobSystem::createPerThreadData(EJobThreadType threadType, u32 threadIdx) noexcept
 {
-    PerThreadData *threadData = (PerThreadData *)PlatformThreadingFuncs::getTlsSlotValue(tlsSlot);
+    PerThreadData *threadData = reinterpret_cast<PerThreadData *>(PlatformThreadingFuncs::getTlsSlotValue(tlsSlot));
     COPAT_ASSERT(threadData == nullptr);
 
     PerThreadData *newThreadData = memNew<PerThreadData>(mainThreadJobs, supervisorThread);
@@ -393,7 +532,7 @@ copat::JobSystem::PerThreadData &JobSystem::createPerThreadData(EJobThreadType t
 #endif
 
     PlatformThreadingFuncs::setTlsSlotValue(tlsSlot, newThreadData);
-    threadData = (PerThreadData *)PlatformThreadingFuncs::getTlsSlotValue(tlsSlot);
+    threadData = reinterpret_cast<PerThreadData *>(PlatformThreadingFuncs::getTlsSlotValue(tlsSlot));
     COPAT_ASSERT(threadData == newThreadData);
 
     return *threadData;
@@ -401,7 +540,7 @@ copat::JobSystem::PerThreadData &JobSystem::createPerThreadData(EJobThreadType t
 
 void JobSystem::deletePerThreadData(PerThreadData *tlData) noexcept
 {
-    if (tlDataDelete && tlData->tlUserData)
+    if (tlDataDelete && tlData->tlUserData != nullptr)
     {
         tlDataDelete(userData, tlData->threadType, tlData->threadIdx, tlData->tlUserData);
     }
@@ -429,7 +568,7 @@ void JobSystem::runMain() noexcept
         {
             coroPtr = mainThreadJobs[priority].dequeue();
         }
-        while (coroPtr)
+        while (coroPtr != nullptr)
         {
             COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatMainJob"));
 #if COPAT_DEBUG_JOBS
@@ -494,7 +633,7 @@ void JobSystem::doWorkerJobs(u32 threadIdx) noexcept
             {
                 coroPtr = workerThreadsPool.dequeueJob(threadIdx, priority, tlData->workerQsTokens);
             }
-            while (coroPtr)
+            while (coroPtr != nullptr)
             {
                 COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatWorkerJob"));
 #if COPAT_DEBUG_JOBS
@@ -522,13 +661,13 @@ void JobSystem::doWorkerJobs(u32 threadIdx) noexcept
             if (bEnableJobStealing)
             {
                 COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatStealJob"));
-                u32 stealFromThreadIdx = randomNum() % getWorkersCount();
+                const u32 stealFromThreadIdx = randomNum() % getWorkersCount();
                 for (EJobPriority priority = Priority_Critical; priority < Priority_MaxPriority && coroPtr == nullptr;
                      priority = EJobPriority(priority + 1))
                 {
                     coroPtr = workerThreadsPool.stealJob(stealFromThreadIdx, priority, tlData->workerQsTokens);
                 }
-                while (coroPtr)
+                while (coroPtr != nullptr)
                 {
                     COPAT_PROFILER_SCOPE_VALUE(COPAT_PROFILER_CHAR("CopatStolenJob"), stealFromThreadIdx);
 #if COPAT_DEBUG_JOBS
@@ -582,7 +721,7 @@ void JobSystem::doJobSysThreadJobs(class JobSystemThread &jsThread) noexcept
         {
             coroPtr = jsThread.dequeueJob(priority);
         }
-        while (coroPtr)
+        while (coroPtr != nullptr)
         {
             COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatSpecialJob"));
 #if COPAT_DEBUG_JOBS
@@ -623,7 +762,8 @@ void JobSystem::doJobSysThreadJobs(class JobSystemThread &jsThread) noexcept
 
 u32 JobSystem::calculateWorkersCount() const noexcept
 {
-    u32 coreCount, logicalProcCount;
+    u32 coreCount = 0;
+    u32 logicalProcCount = 0;
     getCoreCount(coreCount, logicalProcCount);
     coreCount = coreCount > 4 ? coreCount : 4;
     return coreCount;
@@ -633,7 +773,7 @@ void JobSystem::setJobSystemName(const TChar *jobSysName)
 {
     const u64 nameLen = COPAT_STRLEN(jobSysName);
     const u64 byteSize = sizeof(TChar) * (nameLen + 1);
-    TChar *nameStr = (TChar *)CoPaTMemAlloc::memAlloc(byteSize);
+    TChar *nameStr = reinterpret_cast<TChar *>(CoPaTMemAlloc::memAlloc(byteSize));
     ::memset(nameStr, 0, byteSize);
     ::memcpy(nameStr, jobSysName, sizeof(TChar) * nameLen);
 
@@ -642,12 +782,13 @@ void JobSystem::setJobSystemName(const TChar *jobSysName)
 
 JobSystem::PerThreadData *JobSystem::getPerThreadData() const noexcept
 {
-    return (PerThreadData *)PlatformThreadingFuncs::getTlsSlotValue(tlsSlot);
+    return reinterpret_cast<PerThreadData *>(PlatformThreadingFuncs::getTlsSlotValue(tlsSlot));
 }
 
 void INTERNAL_runSpecialThread(INTERNAL_DoSpecialThreadFuncType threadFunc, EJobThreadType threadType, u32 threadIdx, JobSystem *jobSystem)
 {
-    u32 coreCount, logicalProcCount;
+    u32 coreCount = 0;
+    u32 logicalProcCount = 0;
     getCoreCount(coreCount, logicalProcCount);
 
     std::thread specialThread{ [jobSystem, threadFunc]()
@@ -656,7 +797,7 @@ void INTERNAL_runSpecialThread(INTERNAL_DoSpecialThreadFuncType threadFunc, EJob
                                } };
     TChar threadNameBuffer[257] = { 0 };
     COPAT_PRINTF(threadNameBuffer, COPAT_TCHAR("%s_%s"), jobSystem->getJobSystemName(), JobSystem::SpecialThreadsPoolType::NAMES[threadIdx]);
-    PlatformThreadingFuncs::setThreadName(threadNameBuffer, specialThread.native_handle());
+    PlatformThreadingFuncs::setThreadName(static_cast<const TChar *>(threadNameBuffer), specialThread.native_handle());
     if (coreCount > u32(threadType))
     {
         /* If not enough core just run as free thread */
@@ -679,8 +820,8 @@ void WorkerThreadsPool::initialize(JobSystem *jobSystem, WorkerThreadQueueType::
     ownerJobSystem = jobSystem;
 
     /* Allocate all the data necessary */
-    const u64 totalAllocSize = sizeof(JobReceivedEvent) * workersCount + sizeof(WorkerThreadQueueType) * workerQsCount()
-                               + sizeof(WorkerQHazardToken) * hazardTokensCount();
+    const u64 totalAllocSize = (sizeof(JobReceivedEvent) * workersCount) + (sizeof(WorkerThreadQueueType) * workerQsCount())
+                               + (sizeof(WorkerQHazardToken) * hazardTokensCount());
     constexpr u64 allocAlignment = AlignmentOf<JobReceivedEvent, WorkerThreadQueueType, WorkerQHazardToken>;
     workerAllocations = CoPaTMemAlloc::memAlloc(totalAllocSize, allocAlignment);
     u64 workerAllocsAddr = reinterpret_cast<u64>(workerAllocations);
@@ -713,7 +854,8 @@ void WorkerThreadsPool::initialize(JobSystem *jobSystem, WorkerThreadQueueType::
 void WorkerThreadsPool::run(INTERNAL_DoWorkerThreadFuncType doWorkerJobFunc, bool bSetAffinity) noexcept
 {
     /* Run all threads */
-    u32 coreCount, logicalProcCount;
+    u32 coreCount = 0;
+    u32 logicalProcCount = 0;
     getCoreCount(coreCount, logicalProcCount);
     const u32 htCount = logicalProcCount / coreCount;
 
@@ -731,8 +873,8 @@ void WorkerThreadsPool::run(INTERNAL_DoWorkerThreadFuncType doWorkerJobFunc, boo
 
     for (u32 i = 0; i < workersCount; ++i)
     {
-        u32 coreIdx = (i % coresForWorkers) + nonWorkerCount;
-        u32 htIdx = (i / coresForWorkers) % htCount;
+        const u32 coreIdx = (i % coresForWorkers) + nonWorkerCount;
+        const u32 htIdx = (i / coresForWorkers) % htCount;
 
         // Create and setup thread
         std::thread worker{ [this, doWorkerJobFunc, i]()
@@ -741,7 +883,7 @@ void WorkerThreadsPool::run(INTERNAL_DoWorkerThreadFuncType doWorkerJobFunc, boo
                             } };
         TChar threadNameBuffer[257] = { 0 };
         COPAT_PRINTF(threadNameBuffer, COPAT_TCHAR("%s_WorkerThread_%u"), ownerJobSystem->getJobSystemName(), i);
-        PlatformThreadingFuncs::setThreadName(threadNameBuffer, worker.native_handle());
+        PlatformThreadingFuncs::setThreadName(static_cast<const TChar *>(threadNameBuffer), worker.native_handle());
         /* If Worker is strictly tied to a logic processor */
         if (bSetAffinity)
         {
@@ -802,6 +944,42 @@ bool WorkerThreadsPool::hasJob(u32 threadIdx, EJobPriority priority, WorkerQHaza
     }
     return bAnyJobs;
 }
+void WorkerThreadsPool::waitForThreadSync(WorkerQHazardToken *fromThreadTokens, u32 skipThreadIdx) noexcept
+{
+    COPAT_ASSERT(!allWorkersExitEvent.try_wait());
+    /* Reduce one if skipping thread is valid */
+    std::latch allWorkerSync{ workersCount - (workersCount > skipThreadIdx ? 1 : 0) };
+    auto coroFunc = [&allWorkerSync]() -> DummyCoroutine
+    {
+        allWorkerSync.count_down();
+        co_return;
+    };
+    for (u32 threadIdx = 0; threadIdx < workersCount; ++threadIdx)
+    {
+        if (skipThreadIdx == threadIdx)
+        {
+            continue;
+        }
+
+        const DummyCoroutine coroHndl = coroFunc();
+        const u32 qIdx = pAndTTypeToIdx(threadIdx, EJobPriority::Priority_Low);
+        if (fromThreadTokens != nullptr)
+        {
+            workerQs[qIdx].enqueue(coroHndl.coro.address(), fromThreadTokens[qIdx]);
+        }
+        else
+        {
+            workerQs[qIdx].enqueue(coroHndl.coro.address());
+        }
+    }
+    /* Notify all together */
+    for (u32 threadIdx = 0; threadIdx < workersCount; ++threadIdx)
+    {
+        workerJobEvents[threadIdx].notify();
+    }
+    allWorkerSync.wait();
+}
+
 void WorkerThreadsPool::enqueueJob(std::coroutine_handle<> coro, EJobPriority priority, WorkerQHazardToken *fromThreadTokens) noexcept
 {
     COPAT_ASSERT(!allWorkersExitEvent.try_wait());
@@ -812,7 +990,7 @@ void WorkerThreadsPool::enqueueJob(std::coroutine_handle<> coro, EJobPriority pr
     const u32 threadIdx = nextEnqToQ.fetch_add(1, std::memory_order::relaxed) % workersCount;
     const u32 qIdx = pAndTTypeToIdx(threadIdx, priority);
 
-    if (fromThreadTokens)
+    if (fromThreadTokens != nullptr)
     {
         workerQs[qIdx].enqueue(coro.address(), fromThreadTokens[qIdx]);
     }
@@ -822,14 +1000,12 @@ void WorkerThreadsPool::enqueueJob(std::coroutine_handle<> coro, EJobPriority pr
     }
     workerJobEvents[threadIdx].notify();
 }
-
 void *WorkerThreadsPool::dequeueJob(u32 threadIdx, EJobPriority priority, WorkerQHazardToken *fromThreadTokens) noexcept
 {
     COPAT_ASSERT(fromThreadTokens);
     const u32 qIdx = pAndTTypeToIdx(threadIdx, priority);
     return workerQs[qIdx].dequeue(fromThreadTokens[qIdx]);
 }
-
 void *WorkerThreadsPool::stealJob(u32 stealFromIdx, EJobPriority stealPriority, WorkerQHazardToken *fromThreadTokens) noexcept
 {
     COPAT_ASSERT(fromThreadTokens);
@@ -886,7 +1062,8 @@ void JobSystemThread::initialize(InitInfo info)
 
 void JobSystemThread::run(INTERNAL_DoJobSystemThreadFuncType doThreadJob, bool bSetAffinity)
 {
-    u32 coreCount, logicalProcCount;
+    u32 coreCount = 0;
+    u32 logicalProcCount = 0;
     getCoreCount(coreCount, logicalProcCount);
 
     std::thread jsThread{ [this, doThreadJob]()
@@ -895,7 +1072,7 @@ void JobSystemThread::run(INTERNAL_DoJobSystemThreadFuncType doThreadJob, bool b
                           } };
     TChar threadNameBuffer[257] = { 0 };
     COPAT_PRINTF(threadNameBuffer, COPAT_TCHAR("%s_%s"), ownerJobSystem->getJobSystemName(), threadName);
-    PlatformThreadingFuncs::setThreadName(threadNameBuffer, jsThread.native_handle());
+    PlatformThreadingFuncs::setThreadName(static_cast<const TChar *>(threadNameBuffer), jsThread.native_handle());
     if (bSetAffinity && coreCount > u32(threadType))
     {
         /* If not enough core just run as free thread */
@@ -921,11 +1098,34 @@ bool JobSystemThread::hasJob(EJobPriority priority) const noexcept
     }
     return bAnyJobs;
 }
+void JobSystemThread::waitForThreadSync(SpecialQHazardToken *fromThreadTokens) noexcept
+{
+    std::atomic_flag waitFlag;
+    const DummyCoroutine coroHndl = [](std::atomic_flag &waitFlag) -> DummyCoroutine
+    {
+        waitFlag.test_and_set(std::memory_order::relaxed);
+        waitFlag.notify_one();
+        co_return;
+    }(waitFlag);
+
+    if (fromThreadTokens != nullptr)
+    {
+        getThreadJobsQueue(EJobPriority::Priority_Low).enqueue(coroHndl.coro.address(), fromThreadTokens[EJobPriority::Priority_Low]);
+    }
+    else
+    {
+        getThreadJobsQueue(EJobPriority::Priority_Low).enqueue(coroHndl.coro.address());
+    }
+
+    jobReceiveEvent.notify();
+    waitFlag.wait(false, std::memory_order::relaxed);
+}
+
 void JobSystemThread::enqueueJob(std::coroutine_handle<> coro, EJobPriority priority, SpecialQHazardToken *fromThreadTokens) noexcept
 {
     /* We must not enqueue at shutdown */
     COPAT_ASSERT(!exitEvent.try_wait());
-    if (fromThreadTokens)
+    if (fromThreadTokens != nullptr)
     {
         getThreadJobsQueue(priority).enqueue(coro.address(), fromThreadTokens[priority]);
     }
