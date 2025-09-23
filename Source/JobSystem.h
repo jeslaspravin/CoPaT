@@ -204,6 +204,11 @@ public:
  */
 using INTERNAL_DoWorkerThreadFuncType = void (JobSystem::*)(u32);
 
+/**
+ * Worker threads uses unique queue for each worker this makes block waiting on worker thread dangerous.
+ * So it is never a good idea to block waiting in worker thread. Either do busy wait with Yield or do co_await.
+ * This is important to further reduce dead locks.
+ */
 class WorkerThreadsPool
 {
 public:
@@ -230,10 +235,7 @@ public:
     WorkerThreadsPool(u32 inWorkersCount)
         : allWorkersExitEvent(inWorkersCount)
         , workersCount(inWorkersCount)
-    {
-        /* Is power of 2 */
-        COPAT_ASSERT((inWorkersCount & (inWorkersCount - 1)) == 0);
-    }
+    {}
 
     void initialize(JobSystem *jobSystem, WorkerThreadQueueType::QueueSharedContext &qSharedContext) noexcept;
     void run(INTERNAL_DoWorkerThreadFuncType doWorkerJobFunc, bool bSetAffinity) noexcept;
@@ -485,7 +487,12 @@ public:
     }
 
     u32 getWorkersCount() const noexcept { return workerThreadsPool.getWorkersCount(); }
-    u32 getTotalThreadsCount() const { return getWorkersCount() + SpecialThreadsPoolType::COUNT + 1 /* Main thread */; }
+    u32 getNoneWorkersCount() const noexcept
+    {
+        return SpecialThreadsPoolType::COUNT + 1 /* Main thread */
+               + ((threadingConstraints & THREADCONSTRAINT_ENUM_TO_FLAGBIT(EnableSupervisor)) != 0 ? 1 : 0) /* Supervisor thread */;
+    }
+    u32 getTotalThreadsCount() const noexcept { return getWorkersCount() + getNoneWorkersCount(); }
 
     const TChar *getJobSystemName() const { return jsName; }
 

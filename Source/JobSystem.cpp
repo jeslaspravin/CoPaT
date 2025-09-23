@@ -149,10 +149,14 @@ void JobSystem::initialize(InitInterface initIxx, void *inUserData) noexcept
     {
         mainThreadJobs[priority].setupQueue(qSharedContext);
     }
-    TChar threadNameBuffer[257] = { 0 };
-    COPAT_PRINTF(threadNameBuffer, COPAT_TCHAR("%s_MainThread"), jsName);
-    PlatformThreadingFuncs::setCurrentThreadName(static_cast<const TChar *>(threadNameBuffer));
-    PlatformThreadingFuncs::setCurrentThreadProcessor(0, 0);
+    /* Update the main thread name only if we are the main job system. */
+    if (singletonInstance == this)
+    {
+        TChar threadNameBuffer[257] = { 0 };
+        COPAT_PRINTF(threadNameBuffer, COPAT_TCHAR("%s_MainThread"), jsName);
+        PlatformThreadingFuncs::setCurrentThreadName(static_cast<const TChar *>(threadNameBuffer));
+        PlatformThreadingFuncs::setCurrentThreadProcessor(0, 0);
+    }
     createPerThreadData(EJobThreadType::MainThread, 0);
 }
 #undef NO_SPECIALTHREADS_INDIR_SETUP
@@ -859,21 +863,22 @@ void WorkerThreadsPool::run(INTERNAL_DoWorkerThreadFuncType doWorkerJobFunc, boo
     getCoreCount(coreCount, logicalProcCount);
     const u32 htCount = logicalProcCount / coreCount;
 
-    u32 nonWorkerCount = u32(EJobThreadType::WorkerThreads);
+    u32 noneWorkerCount = ownerJobSystem->getNoneWorkersCount();
     u32 coresForWorkers = coreCount;
-    if (coreCount <= nonWorkerCount)
+    if (coreCount <= noneWorkerCount)
     {
         /* If there is very limited cores then let OS handle better scheduling, we just distribute workers evenly */
-        nonWorkerCount = 0;
+        noneWorkerCount = 0;
+        bSetAffinity = false;
     }
     else
     {
-        coresForWorkers = coreCount - nonWorkerCount;
+        coresForWorkers = coreCount - noneWorkerCount;
     }
 
     for (u32 i = 0; i < workersCount; ++i)
     {
-        const u32 coreIdx = (i % coresForWorkers) + nonWorkerCount;
+        const u32 coreIdx = (i % coresForWorkers) + noneWorkerCount;
         const u32 htIdx = (i / coresForWorkers) % htCount;
 
         // Create and setup thread
@@ -894,7 +899,7 @@ void WorkerThreadsPool::run(INTERNAL_DoWorkerThreadFuncType doWorkerJobFunc, boo
             PlatformThreadingFuncs::GroupAffinityMaskBuilder affinityBuilder;
             affinityBuilder.setAll();
             affinityBuilder.setGroupFrom(coreIdx);
-            affinityBuilder.clearUpto(nonWorkerCount, 0);
+            affinityBuilder.clearUpto(noneWorkerCount, 0);
             PlatformThreadingFuncs::setThreadGroupAffinity(
                 affinityBuilder.getGroupIdx(), affinityBuilder.getAffinityMask(), worker.native_handle()
             );
@@ -1076,7 +1081,8 @@ void JobSystemThread::run(INTERNAL_DoJobSystemThreadFuncType doThreadJob, bool b
     if (bSetAffinity && coreCount > u32(threadType))
     {
         /* If not enough core just run as free thread */
-        PlatformThreadingFuncs::setThreadProcessor(u32(threadType), 0, jsThread.native_handle());
+        COPAT_ASSERT(u32(threadType) > 0);
+        PlatformThreadingFuncs::setThreadProcessor(u32(threadType) - 1, 0, jsThread.native_handle());
     }
     /* Destroy when finishes */
     jsThread.detach();

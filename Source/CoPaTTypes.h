@@ -26,7 +26,11 @@ namespace copat
 class JobSystem;
 
 /**
- * MainThread must be 0 and any other threads must be sequential values from 1 to WorkerThreads - 1
+ * MainThread must be 0 and any other threads must be sequential values from 1 to WorkerThreads - 1.
+ * Any optional threads must go after the worker thread type.
+ * This is a convention followed as the Special Threads count gets calculated from WorkerThreads value,
+ * it must be calculated from anything immediately following the USER_DEFINED_THREADS macro.
+ * Explicitly calculate total none worker threads count = (none worker optional threads count from flags + u32(WorkerThreads)).
  */
 enum class EJobThreadType : u32
 {
