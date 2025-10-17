@@ -559,9 +559,10 @@ private:
 
             specialThreadsPool.waitForJob(SpecialThreadIdx);
         }
-        specialThreadsPool.onSpecialThreadExit();
-
         deletePerThreadData(tlData);
+
+        /* Must be called last as anything beyond this might get scheduled after job system gets destroyed. */
+        specialThreadsPool.onSpecialThreadExit();
     }
 
 private:

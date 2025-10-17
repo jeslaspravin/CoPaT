@@ -707,8 +707,10 @@ void JobSystem::doWorkerJobs(u32 threadIdx) noexcept
         }
         workerThreadsPool.waitForJob(threadIdx);
     }
-    workerThreadsPool.onWorkerThreadExit();
     deletePerThreadData(tlData);
+
+    /* Must be called last as anything beyond this might get scheduled after job system gets destroyed. */
+    workerThreadsPool.onWorkerThreadExit();
 }
 
 void JobSystem::doJobSysThreadJobs(class JobSystemThread &jsThread) noexcept
@@ -759,9 +761,11 @@ void JobSystem::doJobSysThreadJobs(class JobSystemThread &jsThread) noexcept
 
         jsThread.waitForJob();
     }
-    jsThread.onJobSytemThreadExit();
 
     deletePerThreadData(tlData);
+
+    /* Must be called last as anything beyond this might get scheduled after job system gets destroyed. */
+    jsThread.onJobSytemThreadExit();
 }
 
 u32 JobSystem::calculateWorkersCount() const noexcept
