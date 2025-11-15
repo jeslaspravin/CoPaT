@@ -14,6 +14,7 @@
 
 #include <thread>
 #include <bit>
+#include <array>
 
 COPAT_NS_INLINED
 namespace copat
@@ -35,7 +36,7 @@ static JobSystem::EThreadingConstraint getThreadingConstraint(u32 constraints)
     return JobSystem::EThreadingConstraint(constraints & (JobSystem::BitMasksStart - 1));
 }
 
-JobSystem *JobSystem::singletonInstance = nullptr;
+JobSystem *JobSystem::gInstance = nullptr;
 
 JobSystem::JobSystem(u32 constraints, const TChar *jobSysName)
     : threadingConstraints(constraints)
@@ -59,17 +60,17 @@ JobSystem::JobSystem(u32 inWorkerCount, u32 constraints, const TChar *jobSysName
 }
 
 #define NO_SPECIALTHREADS_INDIR_SETUP(ThreadType) enqIndirection[u32(EJobThreadType::ThreadType)] = EJobThreadType::MainThread;
-#define SPECIALTHREAD_INDIR_SETUP(ThreadType)                                                                                                \
-    enqIndirection[u32(EJobThreadType::##ThreadType)]                                                                                        \
+#define SPECIALTHREAD_INDIR_SETUP(ThreadType)                                                                                                  \
+    enqIndirection[u32(EJobThreadType::##ThreadType)]                                                                                          \
         = (threadingConstraints & NOSPECIALTHREAD_ENUM_TO_FLAGBIT(ThreadType)) ? EJobThreadType::MainThread : EJobThreadType::ThreadType;
 
 void JobSystem::initialize(InitInterface initIxx, void *inUserData) noexcept
 {
     COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatInit"));
 
-    if (singletonInstance == nullptr)
+    if (gInstance == nullptr)
     {
-        singletonInstance = this;
+        gInstance = this;
     }
 
     if (!PlatformThreadingFuncs::createTlsSlot(tlsSlot))
@@ -78,8 +79,7 @@ void JobSystem::initialize(InitInterface initIxx, void *inUserData) noexcept
     }
 
     const EThreadingConstraint tConstraint = getThreadingConstraint(threadingConstraints);
-    const bool bEnableSpecials
-        = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoSpecialThreads);
+    const bool bEnableSpecials = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoSpecialThreads);
     const bool bEnableWorkers = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoWorkerThreads);
     const bool bEnableSupervisor
         = (tConstraint != EThreadingConstraint::SingleThreaded
@@ -150,7 +150,7 @@ void JobSystem::initialize(InitInterface initIxx, void *inUserData) noexcept
         mainThreadJobs[priority].setupQueue(qSharedContext);
     }
     /* Update the main thread name only if we are the main job system. */
-    if (singletonInstance == this)
+    if (gInstance == this)
     {
         TChar threadNameBuffer[257] = { 0 };
         COPAT_PRINTF(threadNameBuffer, COPAT_TCHAR("%s_MainThread"), jsName);
@@ -182,8 +182,7 @@ void JobSystem::shutdown() noexcept
     bExitMain[1].test_and_set(std::memory_order::release);
 
     const EThreadingConstraint tConstraint = getThreadingConstraint(threadingConstraints);
-    const bool bEnableSpecials
-        = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoSpecialThreads);
+    const bool bEnableSpecials = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoSpecialThreads);
     const bool bEnableWorkers = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoWorkerThreads);
     const bool bEnableSupervisor
         = (tConstraint != EThreadingConstraint::SingleThreaded
@@ -215,9 +214,9 @@ void JobSystem::shutdown() noexcept
     }
 
     deletePerThreadData(mainThreadTlData);
-    if (singletonInstance == this)
+    if (gInstance == this)
     {
-        singletonInstance = nullptr;
+        gInstance = nullptr;
     }
 
     CoPaTMemAlloc::memFree(jsName);
@@ -507,8 +506,7 @@ void JobSystem::enqueueJob(
 JobSystem::PerThreadData::PerThreadData(SpecialThreadQueueType *mainQs, JobSystemThread &supervisorThread)
     : threadType(EJobThreadType::WorkerThreads)
     , threadIdx(0)
-    , mainQTokens{ mainQs[Priority_Critical].getHazardToken(), mainQs[Priority_Normal].getHazardToken(),
-                   mainQs[Priority_Low].getHazardToken() }
+    , mainQTokens{ mainQs[Priority_Critical].getHazardToken(), mainQs[Priority_Normal].getHazardToken(), mainQs[Priority_Low].getHazardToken() }
     , supervisorTokens{ supervisorThread.getEnqToken(Priority_Critical), supervisorThread.getEnqToken(Priority_Normal),
                         supervisorThread.getEnqToken(Priority_Low) }
     , workerQsTokens(nullptr)
@@ -553,6 +551,10 @@ void JobSystem::deletePerThreadData(PerThreadData *tlData) noexcept
 
 void JobSystem::runMain() noexcept
 {
+    /* Main thread must execute only tasks for each frame instead of all the tasks in Queue.
+     * This ensures enqueue to main Queue from within another job in main Queue to always end up in next frame. */
+    constexpr uintptr_t FRAME_FENCE_MARKER = (1ull << 63ull) | 1ull;
+
     /* Main thread data gets created and destroy in initialize and shutdown resp. */
     PerThreadData *tlData = getPerThreadData();
     COPAT_ASSERT(tlData->threadType == EJobThreadType::MainThread);
@@ -560,8 +562,18 @@ void JobSystem::runMain() noexcept
     while (true)
     {
         COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatMainTick"));
+
+        /* Will be true when Queue reached FRAME_FENCE_MARKER. */
+        std::array<bool, Priority_MaxPriority> frameEnded = {};
+
         if (bool(mainThreadTick))
         {
+            /* Insert FRAME_FENCE_MARKER before main tick so that everything inserted last frame only gets executed this frame. */
+            for (EJobPriority priority = Priority_Critical; priority < Priority_MaxPriority; priority = EJobPriority(priority + 1))
+            {
+                mainThreadJobs[priority].enqueue(std::bit_cast<void *>(FRAME_FENCE_MARKER), tlData->mainQTokens[priority]);
+            }
+
             mainThreadTick(userData);
         }
 
@@ -570,7 +582,17 @@ void JobSystem::runMain() noexcept
         for (EJobPriority priority = Priority_Critical; priority < Priority_MaxPriority && coroPtr == nullptr;
              priority = EJobPriority(priority + 1))
         {
-            coroPtr = mainThreadJobs[priority].dequeue();
+            if (!frameEnded[priority])
+            {
+                coroPtr = mainThreadJobs[priority].dequeue();
+            }
+
+            /* Mark frame end reached */
+            if (coroPtr == std::bit_cast<void *>(FRAME_FENCE_MARKER))
+            {
+                coroPtr = nullptr;
+                frameEnded[priority] = true;
+            }
         }
         while (coroPtr != nullptr)
         {
@@ -593,7 +615,17 @@ void JobSystem::runMain() noexcept
             for (EJobPriority priority = Priority_Critical; priority < Priority_MaxPriority && coroPtr == nullptr;
                  priority = EJobPriority(priority + 1))
             {
-                coroPtr = mainThreadJobs[priority].dequeue();
+                if (!frameEnded[priority])
+                {
+                    coroPtr = mainThreadJobs[priority].dequeue();
+                }
+
+                /* Mark frame end reached */
+                if (coroPtr == std::bit_cast<void *>(FRAME_FENCE_MARKER))
+                {
+                    coroPtr = nullptr;
+                    frameEnded[priority] = true;
+                }
             }
         }
 #if COPAT_DEBUG_JOBS

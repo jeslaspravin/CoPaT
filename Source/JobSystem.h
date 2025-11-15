@@ -392,7 +392,7 @@ public:
 #undef NOSPECIALTHREAD_ENUM
 
 private:
-    static JobSystem *singletonInstance;
+    static JobSystem *gInstance;
 
     const TChar *jsName = nullptr;
     u32 tlsSlot = 0;
@@ -431,7 +431,7 @@ public:
     JobSystem(u32 constraints, const TChar *jobSysName);
     JobSystem(u32 inWorkerCount, u32 constraints, const TChar *jobSysName);
 
-    static JobSystem *get() noexcept { return singletonInstance; }
+    static JobSystem *get() noexcept { return gInstance; }
 
     void initialize(InitInterface initIxx, void *inUserData) noexcept;
     /* Overload to match the previous initialize */

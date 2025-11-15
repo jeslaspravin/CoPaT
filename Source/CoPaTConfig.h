@@ -11,9 +11,9 @@
 
 #pragma once
 
-#include <stdint.h>
-#include <functional>
-#include <string>
+#ifdef COPAT_USER_CFG_INCL
+#include COPAT_USER_CFG_INCL
+#endif
 
 /**
  * Thread types that are added by user
@@ -25,7 +25,9 @@
 //      LastMacroName(ThreadN)
 //
 // #define FOR_EACH_THREAD_TYPES_UNIQUE_FIRST_LAST(FirstMacroName, MacroName, LastMacroName) FirstMacroName(RenderThread)
+#ifndef FOR_EACH_UDTHREAD_TYPES_UNIQUE_FIRST_LAST
 #define FOR_EACH_UDTHREAD_TYPES_UNIQUE_FIRST_LAST(FirstMacroName, MacroName, LastMacroName)
+#endif
 #define FOR_EACH_UDTHREAD_TYPES(MacroName) FOR_EACH_UDTHREAD_TYPES_UNIQUE_FIRST_LAST(MacroName, MacroName, MacroName)
 
 #define USER_DEFINED_THREAD(ThreadType) ThreadType,
@@ -117,6 +119,22 @@
 /// Actual config
 //////////////////////////////////////////////////////////////////////////
 
+#if !(defined OVERRIDE_UINT32 || defined OVERRIDE_UINT64)
+#include <stdint.h>
+#endif
+
+#ifndef OVERRIDE_ASSERT
+#include <assert.h>
+#endif
+
+#if !(defined OVERRIDE_STRLEN || defined OVERRIDE_TOSTRING || defined OVERRIDE_PRINTF)
+#include <string>
+#endif
+
+#ifndef OVERRIDE_FUNCTION_TYPE
+#include <functional>
+#endif
+
 #ifndef USER_DEFINED_THREADS
 #define USER_DEFINED_THREADS()
 #endif
@@ -147,7 +165,6 @@
 #ifdef OVERRIDE_ASSERT
 #define COPAT_ASSERT(expr) OVERRIDE_ASSERT(expr)
 #else
-#include <assert.h>
 #define COPAT_ASSERT(expr) assert((expr))
 #endif
 
@@ -178,10 +195,10 @@
 #ifdef OVERRIDE_PRINTF
 #define COPAT_PRINTF(TCharArray, Fmt, ...) OVERRIDE_PRINTF(TCharArray, Fmt, __VA_ARGS__)
 #else
-#define COPAT_PRINTF(TCharArray, Fmt, ...)                                                                                                   \
-    [&]<u64 Len>(TChar(&outBuffer)[Len])                                                                                                     \
-    {                                                                                                                                        \
-        return std::snprintf(static_cast<TChar *>(outBuffer), Len, Fmt, __VA_ARGS__);                                                        \
+#define COPAT_PRINTF(TCharArray, Fmt, ...)                                                                                                     \
+    [&]<u64 Len>(TChar(&outBuffer)[Len])                                                                                                       \
+    {                                                                                                                                          \
+        return std::snprintf(static_cast<TChar *>(outBuffer), Len, Fmt, __VA_ARGS__);                                                          \
     }(TCharArray)
 #endif
 
@@ -222,7 +239,7 @@
 #if COPAT_DEBUG_JOBS
 
 #ifdef OVERRIDE_DEBUG_JOBS_DUMP
-#define COPAT_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount)                                                                  \
+#define COPAT_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount)                                                                    \
     OVERRIDE_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount)
 #else
 #define COPAT_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount)
@@ -232,34 +249,33 @@
 #define COPAT_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount)
 #endif // #if COPAT_DEBUG_JOBS
 
-COPAT_NS_INLINED
-namespace copat
+COPAT_NS_INLINED namespace copat
 {
 
 #ifdef OVERRIDE_UINT32
-using u32 = OVERRIDE_UINT32;
+    using u32 = OVERRIDE_UINT32;
 #else
-using u32 = uint32_t;
+    using u32 = uint32_t;
 #endif
 
 #ifdef OVERRIDE_UINT64
-using u64 = OVERRIDE_UINT64;
+    using u64 = OVERRIDE_UINT64;
 #else
-using u64 = uint64_t;
+    using u64 = uint64_t;
 #endif
 
 #ifdef OVERRIDE_TCHAR_TYPE
-using TChar = OVERRIDE_TCHAR_TYPE;
+    using TChar = OVERRIDE_TCHAR_TYPE;
 #else
-using TChar = std::remove_cv_t<std::remove_pointer_t<decltype(COPAT_TOSTRING(0).c_str())>>;
+    using TChar = std::remove_cv_t<std::remove_pointer_t<decltype(COPAT_TOSTRING(0).c_str())>>;
 #endif
 
 #ifdef OVERRIDE_FUNCTION_TYPE
-template <typename RetType, typename... Args>
-using FunctionType = OVERRIDE_FUNCTION_TYPE<RetType, Args...>;
+    template <typename RetType, typename... Args>
+    using FunctionType = OVERRIDE_FUNCTION_TYPE<RetType, Args...>;
 #else
-template <typename RetType, typename... Args>
-using FunctionType = std::function<RetType(Args...)>;
+    template <typename RetType, typename... Args>
+    using FunctionType = std::function<RetType(Args...)>;
 #endif
 
 } // namespace copat

@@ -99,6 +99,7 @@ copat::JobSystemTaskType<..., /*EnqAtInitialSuspend*/ true, /*EnqueueInThread*/ 
 ```
 
 > *Note that calling this coroutine will always enqueue to the back of the queue even if the current thread is the same as the coroutine's enqueue thread! This could be used to defer some jobs in the same thread.*
+> *In main thread though enqueued tasks are guarded with frame fence. Only coroutine tasks that gets enqueued before the fence gets executed every frame*
 
 ## Switching job thread
 
