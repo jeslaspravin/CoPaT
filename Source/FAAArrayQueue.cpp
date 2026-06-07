@@ -4,9 +4,9 @@
  * \author Jeslas
  * \date August 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2023
+ *  Copyright (C) Jeslas Pravin, 2022-2026
  *  @jeslaspravin pravinjeslas@gmail.com
- *  License can be read in LICENSE file at this repository's root
+ *  MIT Licensed. Full license is in LICENSE file at this repository's root
  */
 
 #include "FAAArrayQueue.hpp"

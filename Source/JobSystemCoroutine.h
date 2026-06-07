@@ -4,9 +4,9 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2025
+ *  Copyright (C) Jeslas Pravin, 2022-2026
  *  @jeslaspravin pravinjeslas@gmail.com
- *  License can be read in LICENSE file at this repository's root
+ *  MIT Licensed. Full license is in LICENSE file at this repository's root
  */
 
 #pragma once
@@ -272,7 +272,7 @@ public:
     {
         other.ownerCoroutine = nullptr;
     }
-    JobSystemTaskType &operator= (JobSystemTaskType &&other)
+    JobSystemTaskType &operator = (JobSystemTaskType &&other)
     {
         if (ownerCoroutine)
         {
@@ -295,7 +295,7 @@ public:
     // Delete copy and default initializations
     JobSystemTaskType() = delete;
     JobSystemTaskType(const JobSystemTaskType &) = delete;
-    JobSystemTaskType &operator= (const JobSystemTaskType &) = delete;
+    JobSystemTaskType &operator = (const JobSystemTaskType &) = delete;
 
     class PromiseType : public BasePromiseType
     {
@@ -406,7 +406,7 @@ public:
     {
         other.ownerCoroutine = nullptr;
     }
-    JobSystemTaskType &operator= (JobSystemTaskType &&other)
+    JobSystemTaskType &operator = (JobSystemTaskType &&other)
     {
         if (ownerCoroutine)
         {
@@ -429,7 +429,7 @@ public:
     // Delete copy and default initializations
     JobSystemTaskType() = delete;
     JobSystemTaskType(const JobSystemTaskType &) = delete;
-    JobSystemTaskType &operator= (const JobSystemTaskType &) = delete;
+    JobSystemTaskType &operator = (const JobSystemTaskType &) = delete;
 
     class PromiseType : public BasePromiseType
     {
@@ -532,9 +532,9 @@ public:
         : ownerCoroutinePtr(owner.address(), CoroutineDestroyer{})
     {}
     JobSystemShareableTaskType(JobSystemShareableTaskType &&) = default;
-    JobSystemShareableTaskType &operator= (JobSystemShareableTaskType &&) = default;
+    JobSystemShareableTaskType &operator = (JobSystemShareableTaskType &&) = default;
     JobSystemShareableTaskType(const JobSystemShareableTaskType &) = default;
-    JobSystemShareableTaskType &operator= (const JobSystemShareableTaskType &) = default;
+    JobSystemShareableTaskType &operator = (const JobSystemShareableTaskType &) = default;
 
     // Delete default initializations
     JobSystemShareableTaskType() = delete;
@@ -650,9 +650,9 @@ public:
         : ownerCoroutinePtr(owner.address(), CoroutineDestroyer{})
     {}
     JobSystemShareableTaskType(JobSystemShareableTaskType &&) = default;
-    JobSystemShareableTaskType &operator= (JobSystemShareableTaskType &&) = default;
+    JobSystemShareableTaskType &operator = (JobSystemShareableTaskType &&) = default;
     JobSystemShareableTaskType(const JobSystemShareableTaskType &) = default;
-    JobSystemShareableTaskType &operator= (const JobSystemShareableTaskType &) = default;
+    JobSystemShareableTaskType &operator = (const JobSystemShareableTaskType &) = default;
 
     // Delete default initializations
     JobSystemShareableTaskType() = delete;

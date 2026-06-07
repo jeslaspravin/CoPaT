@@ -4,9 +4,9 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2025
+ *  Copyright (C) Jeslas Pravin, 2022-2026
  *  @jeslaspravin pravinjeslas@gmail.com
- *  License can be read in LICENSE file at this repository's root
+ *  MIT Licensed. Full license is in LICENSE file at this repository's root
  */
 
 #pragma once
@@ -30,8 +30,8 @@
 #endif
 #define FOR_EACH_UDTHREAD_TYPES(MacroName) FOR_EACH_UDTHREAD_TYPES_UNIQUE_FIRST_LAST(MacroName, MacroName, MacroName)
 
-#define USER_DEFINED_THREAD(ThreadType) ThreadType,
-#define USER_DEFINED_THREADS() FOR_EACH_UDTHREAD_TYPES(USER_DEFINED_THREAD)
+#define USER_DEFINED_THREAD(ThreadType)    ThreadType,
+#define USER_DEFINED_THREADS()             FOR_EACH_UDTHREAD_TYPES(USER_DEFINED_THREAD)
 
 /**
  * Define Cache line size override here
@@ -100,8 +100,9 @@
 // #define COPAT_ENABLE_QUEUE_ALLOC_TRACKING 1
 
 /**
- * Override uint32_t and uint64_t?
+ * Override uint32_t, int32_t and uint64_t?
  */
+// #define OVERRIDE_SINT32 int32
 // #define OVERRIDE_UINT32 uint32
 // #define OVERRIDE_UINT64 uint64
 
@@ -195,10 +196,10 @@
 #ifdef OVERRIDE_PRINTF
 #define COPAT_PRINTF(TCharArray, Fmt, ...) OVERRIDE_PRINTF(TCharArray, Fmt, __VA_ARGS__)
 #else
-#define COPAT_PRINTF(TCharArray, Fmt, ...)                                                                                                     \
-    [&]<u64 Len>(TChar(&outBuffer)[Len])                                                                                                       \
-    {                                                                                                                                          \
-        return std::snprintf(static_cast<TChar *>(outBuffer), Len, Fmt, __VA_ARGS__);                                                          \
+#define COPAT_PRINTF(TCharArray, Fmt, ...)                                                                                                   \
+    [&]<u64 Len>(TChar(&outBuffer)[Len])                                                                                                     \
+    {                                                                                                                                        \
+        return std::snprintf(static_cast<TChar *>(outBuffer), Len, Fmt, __VA_ARGS__);                                                        \
     }(TCharArray)
 #endif
 
@@ -239,18 +240,24 @@
 #if COPAT_DEBUG_JOBS
 
 #ifdef OVERRIDE_DEBUG_JOBS_DUMP
-#define COPAT_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount)                                                                    \
+#define COPAT_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount)                                                                  \
     OVERRIDE_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount)
 #else
 #define COPAT_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount)
 #endif
 
-#else // #if COPAT_DEBUG_JOBS
+#else  // #if COPAT_DEBUG_JOBS
 #define COPAT_DEBUG_JOBS_DUMP(JobSys, EnqList, EnqCount, DeqList, DeqCount)
 #endif // #if COPAT_DEBUG_JOBS
 
 COPAT_NS_INLINED namespace copat
 {
+
+#ifdef OVERRIDE_SINT32
+    using s32 = OVERRIDE_SINT32;
+#else
+    using s32 = int32_t;
+#endif
 
 #ifdef OVERRIDE_UINT32
     using u32 = OVERRIDE_UINT32;

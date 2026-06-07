@@ -4,9 +4,9 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2025
+ *  Copyright (C) Jeslas Pravin, 2022-2026
  *  @jeslaspravin pravinjeslas@gmail.com
- *  License can be read in LICENSE file at this repository's root
+ *  MIT Licensed. Full license is in LICENSE file at this repository's root
  */
 
 #pragma once
@@ -20,6 +20,7 @@
 COPAT_NS_INLINED
 namespace copat
 {
+
 class JobSystem;
 
 using SpecialThreadQueueType = FAAArrayMPSCQueue<void>;
@@ -53,7 +54,7 @@ struct alignas(2 * CACHE_LINE_SIZE) JobReceivedEvent
 };
 
 #define SPECIALTHREAD_NAME_FIRST(ThreadType) COPAT_TCHAR(#ThreadType)
-#define SPECIALTHREAD_NAME(ThreadType) , COPAT_TCHAR(#ThreadType)
+#define SPECIALTHREAD_NAME(ThreadType)       , COPAT_TCHAR(#ThreadType)
 
 template <u32 SpecialThreadsCount>
 class SpecialThreadsPool
@@ -222,15 +223,6 @@ public:
     std::latch allWorkersExitEvent;
     u32 workersCount;
 
-private:
-    /* The index of the queue to which next enqueue job pushes the job into */
-    std::atomic_uint_fast32_t nextEnqToQ{ 0 };
-
-    std::atomic_uint_fast32_t hazardTokensTop{ 0 };
-    WorkerQHazardToken *hazardTokens = nullptr;
-    /* Allocations for all worker queues, each worker's job wait events and each thread's enq/deq tokens */
-    void *workerAllocations = nullptr;
-
 public:
     WorkerThreadsPool(u32 inWorkersCount)
         : allWorkersExitEvent(inWorkersCount)
@@ -250,15 +242,37 @@ public:
     void *dequeueJob(u32 threadIdx, EJobPriority priority, WorkerQHazardToken *fromThreadTokens) noexcept;
     void *stealJob(u32 stealFromIdx, EJobPriority stealPriority, WorkerQHazardToken *fromThreadTokens) noexcept;
 
+    /* Block and unblock en queuing to worker thread. Useful if want to diverge and wait inside a worker. */
+    void blockThreadEnq(u32 threadIdx) const
+    {
+        COPAT_ASSERT(threadIdx < getWorkersCount());
+        perWorkerData[threadIdx].blockedEnqCounter.fetch_add(1, std::memory_order::relaxed);
+    }
+    void unblockThreadEnq(u32 threadIdx) const
+    {
+        COPAT_ASSERT(threadIdx < getWorkersCount());
+        const s32 prevValue = perWorkerData[threadIdx].blockedEnqCounter.fetch_sub(1, std::memory_order::relaxed);
+        COPAT_ASSERT(prevValue > 0 && "Block-Unblock worker count mismatch!");
+    }
+
     void waitForJob(u32 workerIdx) noexcept;
     void onWorkerThreadExit() noexcept;
 
     /**
-     * Allocates workersCount number of enqueue tokens, One for each worker thread to be used for en queuing job from any threads for each
-     * priority
+     * Allocates workersCount number of enqueue tokens.
+     * One for each worker thread to be used for en queuing job from any threads for each priority
      */
     WorkerQHazardToken *allocateEnqTokens() noexcept;
     u32 getWorkersCount() const { return workersCount; }
+    u32 getAvailableWorkersCount() const
+    {
+        u32 availabeWorkersCount = 0;
+        for (u32 i = 0; i < getWorkersCount(); ++i)
+        {
+            availabeWorkersCount += perWorkerData[i].blockedEnqCounter.load(std::memory_order::relaxed) > 0 ? 0 : 1;
+        }
+        return availabeWorkersCount;
+    }
 
 private:
     // Priority and thread type idx combined to get index in linear array
@@ -271,6 +285,23 @@ private:
     u32 workerQsCount() const { return workersCount * Priority_MaxPriority; }
     /* One token per thread for each worker thread queues and the priorities */
     u32 hazardTokensCount() const;
+
+private:
+    struct PerWorkerData
+    {
+        /* Mainly used to control which workers are available to accept new tasks.
+         * Introduced as part of improving dispatch, diverge, converge robustness. */
+        std::atomic_int blockedEnqCounter;
+    };
+
+    /* The index of the queue to which next enqueue job pushes the job into */
+    std::atomic_uint_fast32_t nextEnqToQ{ 0 };
+
+    std::atomic_uint_fast32_t hazardTokensTop{ 0 };
+    WorkerQHazardToken *hazardTokens = nullptr;
+    PerWorkerData *perWorkerData = nullptr;
+    /* Allocations for all worker queues, each worker's job wait events, each thread's enq/deq tokens and per worker data. */
+    void *workerAllocations = nullptr;
 };
 
 /**
@@ -383,41 +414,13 @@ public:
         NoJobStealing,
         EnableSupervisor,
         // Each of below NoSpecialThread mask will not stop creating those threads but will be used only at Enqueue. This is just to avoid unnecessary complexity
-        FOR_EACH_UDTHREAD_TYPES(NOSPECIALTHREAD_ENUM) 
+        FOR_EACH_UDTHREAD_TYPES(NOSPECIALTHREAD_ENUM)
         BitMasksEnd
     };
 
     // clang-format on
 #undef NOSPECIALTHREAD_ENUM_FIRST
 #undef NOSPECIALTHREAD_ENUM
-
-private:
-    static JobSystem *gInstance;
-
-    const TChar *jsName = nullptr;
-    u32 tlsSlot = 0;
-    u32 threadingConstraints = EThreadingConstraint::NoConstraints;
-
-    static_assert(
-        std::is_same_v<SpecialThreadQueueType::QueueSharedContext, WorkerThreadQueueType::QueueSharedContext>,
-        "Queues shared context are not the same type"
-    );
-    SpecialThreadQueueType::QueueSharedContext qSharedContext;
-
-    SpecialThreadQueueType mainThreadJobs[Priority_MaxPriority];
-    // 0 will be used by main thread loop itself while 1 will be used by worker threads to run until shutdown is called
-    std::atomic_flag bExitMain[2];
-    MainThreadTickFunc mainThreadTick;
-    TlDataCreateFunc tlDataCreate;
-    TlDataDeleteFunc tlDataDelete;
-    void *userData = nullptr;
-
-    WorkerThreadsPool workerThreadsPool;
-    SpecialThreadsPoolType specialThreadsPool;
-
-    JobSystemThread supervisorThread;
-
-    EJobThreadType enqIndirection[u32(EJobThreadType::MaxThreads)];
 
 public:
     /**
@@ -460,7 +463,7 @@ public:
 
     EJobThreadType getCurrentThreadType() const noexcept
     {
-        if (PerThreadData *tlData = getPerThreadData())
+        if (const PerThreadData *tlData = getPerThreadData())
         {
             return tlData->threadType;
         }
@@ -469,7 +472,7 @@ public:
     /* Will return non zero index only for workers, for others always returns 0 */
     u32 getCurrentThreadIdx() const noexcept
     {
-        if (PerThreadData *tlData = getPerThreadData())
+        if (const PerThreadData *tlData = getPerThreadData())
         {
             return tlData->threadType == EJobThreadType::WorkerThreads ? tlData->threadIdx : 0u;
         }
@@ -479,14 +482,18 @@ public:
     bool isInThread(EJobThreadType threadType) const { return getCurrentThreadType() == enqToThreadType(threadType); }
     void *getTlUserData() const
     {
-        if (PerThreadData *tlData = getPerThreadData())
+        if (const PerThreadData *tlData = getPerThreadData())
         {
             return tlData->tlUserData;
         }
         return nullptr;
     }
 
+    void blockWorkerEnqueue(u32 workerThreadIdx) const noexcept { workerThreadsPool.blockThreadEnq(workerThreadIdx); }
+    void unblockWorkerEnqueue(u32 workerThreadIdx) const noexcept { workerThreadsPool.unblockThreadEnq(workerThreadIdx); }
+
     u32 getWorkersCount() const noexcept { return workerThreadsPool.getWorkersCount(); }
+    u32 getAvailableWorkersCount() const noexcept { return workerThreadsPool.getAvailableWorkersCount(); }
     u32 getNoneWorkersCount() const noexcept
     {
         return SpecialThreadsPoolType::COUNT + 1 /* Main thread */
@@ -529,13 +536,15 @@ private:
             {
                 COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatSpecialJob"));
 #if COPAT_DEBUG_JOBS
-                pushNextDeq({
-                    .fromThreadIdx = SpecialThreadIdx,
-                    .execThreadIdx = SpecialThreadIdx,
-                    .threadType = SpecialThreadType,
-                    .jobHndl = coroPtr,
-                    .jobSys = this,
-                });
+                pushNextDeq(
+                    {
+                        .fromThreadIdx = SpecialThreadIdx,
+                        .execThreadIdx = SpecialThreadIdx,
+                        .threadType = SpecialThreadType,
+                        .jobHndl = coroPtr,
+                        .jobSys = this,
+                    }
+                );
                 tlData->currentJobHndl = coroPtr;
 #endif
                 /* Resume job/task */
@@ -566,6 +575,33 @@ private:
     }
 
 private:
+    static JobSystem *gInstance;
+
+    const TChar *jsName = nullptr;
+    u32 tlsSlot = 0;
+    u32 threadingConstraints = EThreadingConstraint::NoConstraints;
+
+    static_assert(
+        std::is_same_v<SpecialThreadQueueType::QueueSharedContext, WorkerThreadQueueType::QueueSharedContext>,
+        "Queues shared context are not the same type"
+    );
+    SpecialThreadQueueType::QueueSharedContext qSharedContext;
+
+    SpecialThreadQueueType mainThreadJobs[Priority_MaxPriority];
+    // 0 will be used by main thread loop itself while 1 will be used by worker threads to run until shutdown is called
+    std::atomic_flag bExitMain[2];
+    MainThreadTickFunc mainThreadTick;
+    TlDataCreateFunc tlDataCreate;
+    TlDataDeleteFunc tlDataDelete;
+    void *userData = nullptr;
+
+    WorkerThreadsPool workerThreadsPool;
+    SpecialThreadsPoolType specialThreadsPool;
+
+    JobSystemThread supervisorThread;
+
+    EJobThreadType enqIndirection[u32(EJobThreadType::MaxThreads)];
+
     /* Dumping codes */
 #if COPAT_DEBUG_JOBS
     /* Assuming 128 threads en/dequeuing 256 jobs for a frame/dump */
@@ -580,6 +616,39 @@ private:
     void pushNextDeq(DequeueDump &&dump);
     static JobSystem *dumpTlJobSysPtr();
 #endif
+};
+
+/* Blocks en queuing into current worker if we are queuing from current worker.
+ * Useful for first level of enqueue and wait on current worker.
+ * Be aware when using this for multi level queuing as it is easy to exhaust all the threads and block everything. */
+struct BlockWorkerEnq
+{
+public:
+    BlockWorkerEnq() = default;
+    BlockWorkerEnq(const BlockWorkerEnq &) noexcept = default;
+    BlockWorkerEnq(BlockWorkerEnq &&) noexcept = default;
+    BlockWorkerEnq &operator = (const BlockWorkerEnq &) noexcept = default;
+    BlockWorkerEnq &operator = (BlockWorkerEnq &&) noexcept = default;
+    BlockWorkerEnq(JobSystem *inJs)
+    {
+        if (inJs != nullptr && inJs->getCurrentThreadType() == EJobThreadType::WorkerThreads)
+        {
+            workerThreadIdx = inJs->getCurrentThreadIdx();
+            js = inJs;
+            js->blockWorkerEnqueue(workerThreadIdx);
+        }
+    }
+    ~BlockWorkerEnq()
+    {
+        if (js != nullptr)
+        {
+            js->unblockWorkerEnqueue(workerThreadIdx);
+        }
+    }
+
+private:
+    JobSystem *js = nullptr;
+    u32 workerThreadIdx = 0;
 };
 
 //////////////////////////////////////////////////////////////////////////

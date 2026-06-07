@@ -4,9 +4,9 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2024
+ *  Copyright (C) Jeslas Pravin, 2022-2026
  *  @jeslaspravin pravinjeslas@gmail.com
- *  License can be read in LICENSE file at this repository's root
+ *  MIT Licensed. Full license is in LICENSE file at this repository's root
  */
 
 #pragma once
@@ -23,6 +23,7 @@ namespace copat
 
 namespace impl
 {
+
 class AwaitAllTasksCounter
 {
 private:
@@ -33,10 +34,10 @@ public:
     AwaitAllTasksCounter(u32 initialCount)
         : counter(initialCount)
     {}
-    AwaitAllTasksCounter(AwaitAllTasksCounter &&other) { this->operator= (std::forward<AwaitAllTasksCounter>(other)); }
-    AwaitAllTasksCounter &operator= (AwaitAllTasksCounter &&other)
+    AwaitAllTasksCounter(AwaitAllTasksCounter &&other) noexcept { this->operator = (std::forward<AwaitAllTasksCounter>(other)); }
+    AwaitAllTasksCounter &operator = (AwaitAllTasksCounter &&other) noexcept
     {
-        /* Must be moved before we start awaiting, else undefined behavior */
+        /* Must have been moved before we start awaiting, else undefined behavior */
         COPAT_ASSERT(!other.awaitingCoroutine);
         reset(other.counter.load(std::memory_order::relaxed));
         other.reset(0);
@@ -44,7 +45,7 @@ public:
     }
     /* Deleting copy as AwaitAllTasks that use this counter is non copyable */
     AwaitAllTasksCounter(const AwaitAllTasksCounter &) = delete;
-    AwaitAllTasksCounter &operator= (const AwaitAllTasksCounter &) = delete;
+    AwaitAllTasksCounter &operator = (const AwaitAllTasksCounter &) = delete;
 
     void reset(u32 newCount) noexcept { counter.store(newCount, std::memory_order::release); }
     void setAwaitingCoroutine(std::coroutine_handle<> awaitingCoro) noexcept
@@ -62,6 +63,7 @@ public:
         }
     }
 };
+
 } // namespace impl
 
 template <typename RetType>
@@ -82,8 +84,8 @@ public:
     // Default is fine as clearing owner coroutine is taken care by the AwaitAllTasks
     AwaitOneTask(AwaitOneTask &&) = default;
     AwaitOneTask(const AwaitOneTask &) = default;
-    AwaitOneTask &operator= (AwaitOneTask &&) = default;
-    AwaitOneTask &operator= (const AwaitOneTask &) = default;
+    AwaitOneTask &operator = (AwaitOneTask &&) = default;
+    AwaitOneTask &operator = (const AwaitOneTask &) = default;
 
     struct PromiseType
     {
@@ -181,7 +183,7 @@ public:
     {}
 
     AwaitAllTasks(AwaitAllTasks &&) = default;
-    AwaitAllTasks &operator= (AwaitAllTasks &&other)
+    AwaitAllTasks &operator = (AwaitAllTasks &&other)
     {
         destroyAllAwaits(std::make_index_sequence<AWAITABLES_COUNT>{});
 
@@ -194,7 +196,7 @@ public:
 
     // Delete copy
     AwaitAllTasks(const AwaitAllTasks &) = delete;
-    AwaitAllTasks &operator= (const AwaitAllTasks &) = delete;
+    AwaitAllTasks &operator = (const AwaitAllTasks &) = delete;
 
     // Should we refactor this into co_await binary operator as this type does not seems to be an awaitable?
     constexpr bool await_ready() const noexcept { return AWAITABLES_COUNT == 0; }
@@ -236,7 +238,8 @@ private:
  */
 template <
     template <typename AwaitableType, typename... OtherArgs> typename AwaitingCollectionType, AwaitableTypeConcept AwaitableType,
-    typename... OtherArgs>
+    typename... OtherArgs
+>
 class AwaitAllTasks<AwaitingCollectionType<AwaitableType, OtherArgs...>>
 {
 public:
@@ -259,7 +262,7 @@ public:
     {}
 
     AwaitAllTasks(AwaitAllTasks &&) = default;
-    AwaitAllTasks &operator= (AwaitAllTasks &&other)
+    AwaitAllTasks &operator = (AwaitAllTasks &&other)
     {
         for (AwaitOneTaskType &awaitable : allAwaits)
         {
@@ -281,7 +284,7 @@ public:
 
     // Delete copy
     AwaitAllTasks(const AwaitAllTasks &) = delete;
-    AwaitAllTasks &operator= (const AwaitAllTasks &) = delete;
+    AwaitAllTasks &operator = (const AwaitAllTasks &) = delete;
 
     // Should we refactor this into co_await binary operator as this type does not seems to be an awaitable?
     constexpr bool await_ready() const noexcept { return allAwaits.size() == 0; }

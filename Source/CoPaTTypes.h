@@ -4,9 +4,9 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2025
+ *  Copyright (C) Jeslas Pravin, 2022-2026
  *  @jeslaspravin pravinjeslas@gmail.com
- *  License can be read in LICENSE file at this repository's root
+ *  MIT Licensed. Full license is in LICENSE file at this repository's root
  */
 
 #pragma once
@@ -40,7 +40,7 @@ enum class EJobThreadType : u32
     // User added thread types end
     WorkerThreads,
     Supervisor,
-    MaxThreads
+    MaxThreads,
 };
 
 enum EJobPriority : u32
@@ -48,7 +48,7 @@ enum EJobPriority : u32
     Priority_Critical = 0,
     Priority_Normal,
     Priority_Low,
-    Priority_MaxPriority
+    Priority_MaxPriority,
 };
 
 //////////////////////////////////////////////////////////////////////////

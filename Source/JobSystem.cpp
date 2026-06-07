@@ -4,9 +4,9 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2025
+ *  Copyright (C) Jeslas Pravin, 2022-2026
  *  @jeslaspravin pravinjeslas@gmail.com
- *  License can be read in LICENSE file at this repository's root
+ *  MIT Licensed. Full license is in LICENSE file at this repository's root
  */
 
 #include "JobSystem.h"
@@ -60,8 +60,8 @@ JobSystem::JobSystem(u32 inWorkerCount, u32 constraints, const TChar *jobSysName
 }
 
 #define NO_SPECIALTHREADS_INDIR_SETUP(ThreadType) enqIndirection[u32(EJobThreadType::ThreadType)] = EJobThreadType::MainThread;
-#define SPECIALTHREAD_INDIR_SETUP(ThreadType)                                                                                                  \
-    enqIndirection[u32(EJobThreadType::##ThreadType)]                                                                                          \
+#define SPECIALTHREAD_INDIR_SETUP(ThreadType)                                                                                                \
+    enqIndirection[u32(EJobThreadType::##ThreadType)]                                                                                        \
         = (threadingConstraints & NOSPECIALTHREAD_ENUM_TO_FLAGBIT(ThreadType)) ? EJobThreadType::MainThread : EJobThreadType::ThreadType;
 
 void JobSystem::initialize(InitInterface initIxx, void *inUserData) noexcept
@@ -79,7 +79,8 @@ void JobSystem::initialize(InitInterface initIxx, void *inUserData) noexcept
     }
 
     const EThreadingConstraint tConstraint = getThreadingConstraint(threadingConstraints);
-    const bool bEnableSpecials = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoSpecialThreads);
+    const bool bEnableSpecials
+        = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoSpecialThreads);
     const bool bEnableWorkers = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoWorkerThreads);
     const bool bEnableSupervisor
         = (tConstraint != EThreadingConstraint::SingleThreaded
@@ -117,12 +118,14 @@ void JobSystem::initialize(InitInterface initIxx, void *inUserData) noexcept
     {
         /* Workers only environment only needs supervisor */
         COPAT_ASSERT(bEnableWorkers && !bEnableSpecials);
-        supervisorThread.initialize({
-            .jobSystem = this,
-            .qSharedContent = qSharedContext,
-            .threadName = COPAT_TCHAR("Supervisor"),
-            .threadType = EJobThreadType::Supervisor,
-        });
+        supervisorThread.initialize(
+            {
+                .jobSystem = this,
+                .qSharedContent = qSharedContext,
+                .threadName = COPAT_TCHAR("Supervisor"),
+                .threadType = EJobThreadType::Supervisor,
+            }
+        );
     }
     else
     {
@@ -182,7 +185,8 @@ void JobSystem::shutdown() noexcept
     bExitMain[1].test_and_set(std::memory_order::release);
 
     const EThreadingConstraint tConstraint = getThreadingConstraint(threadingConstraints);
-    const bool bEnableSpecials = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoSpecialThreads);
+    const bool bEnableSpecials
+        = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoSpecialThreads);
     const bool bEnableWorkers = (tConstraint != EThreadingConstraint::SingleThreaded && tConstraint != EThreadingConstraint::NoWorkerThreads);
     const bool bEnableSupervisor
         = (tConstraint != EThreadingConstraint::SingleThreaded
@@ -407,33 +411,37 @@ void JobSystem::enqueueJob(
 #if COPAT_DEBUG_JOBS
     if (threadData)
     {
-        pushNextEnq({
-            .fromThreadIdx = threadData->threadIdx,
-            .fromThreadType = threadData->threadType,
-            .fromJobSys = this,
-            .toThreadType = enqueueToThread,
-            .redirThreadType = redirThread,
-            .toJobSys = this,
-            .jobHndl = coro.address(),
-            .parentJobHndl = threadData->currentJobHndl,
-            .enqAtSrc = src,
-        });
+        pushNextEnq(
+            {
+                .fromThreadIdx = threadData->threadIdx,
+                .fromThreadType = threadData->threadType,
+                .fromJobSys = this,
+                .toThreadType = enqueueToThread,
+                .redirThreadType = redirThread,
+                .toJobSys = this,
+                .jobHndl = coro.address(),
+                .parentJobHndl = threadData->currentJobHndl,
+                .enqAtSrc = src,
+            }
+        );
     }
     else
     {
         JobSystem *tlJs = dumpTlJobSysPtr();
         PerThreadData *tlData = tlJs ? tlJs->getPerThreadData() : nullptr;
-        pushNextEnq({
-            .fromThreadIdx = tlData ? tlData->threadIdx : 0,
-            .fromThreadType = tlData ? tlData->threadType : EJobThreadType::MaxThreads,
-            .fromJobSys = tlJs,
-            .toThreadType = enqueueToThread,
-            .redirThreadType = redirThread,
-            .toJobSys = this,
-            .jobHndl = coro.address(),
-            .parentJobHndl = tlData ? tlData->currentJobHndl : nullptr,
-            .enqAtSrc = src,
-        });
+        pushNextEnq(
+            {
+                .fromThreadIdx = tlData ? tlData->threadIdx : 0,
+                .fromThreadType = tlData ? tlData->threadType : EJobThreadType::MaxThreads,
+                .fromJobSys = tlJs,
+                .toThreadType = enqueueToThread,
+                .redirThreadType = redirThread,
+                .toJobSys = this,
+                .jobHndl = coro.address(),
+                .parentJobHndl = tlData ? tlData->currentJobHndl : nullptr,
+                .enqAtSrc = src,
+            }
+        );
     }
 #endif
 
@@ -506,7 +514,8 @@ void JobSystem::enqueueJob(
 JobSystem::PerThreadData::PerThreadData(SpecialThreadQueueType *mainQs, JobSystemThread &supervisorThread)
     : threadType(EJobThreadType::WorkerThreads)
     , threadIdx(0)
-    , mainQTokens{ mainQs[Priority_Critical].getHazardToken(), mainQs[Priority_Normal].getHazardToken(), mainQs[Priority_Low].getHazardToken() }
+    , mainQTokens{ mainQs[Priority_Critical].getHazardToken(), mainQs[Priority_Normal].getHazardToken(),
+                   mainQs[Priority_Low].getHazardToken() }
     , supervisorTokens{ supervisorThread.getEnqToken(Priority_Critical), supervisorThread.getEnqToken(Priority_Normal),
                         supervisorThread.getEnqToken(Priority_Low) }
     , workerQsTokens(nullptr)
@@ -554,6 +563,11 @@ void JobSystem::runMain() noexcept
     /* Main thread must execute only tasks for each frame instead of all the tasks in Queue.
      * This ensures enqueue to main Queue from within another job in main Queue to always end up in next frame. */
     constexpr uintptr_t FRAME_FENCE_MARKER = (1ull << 63ull) | 1ull;
+    union MarkerOrCoro
+    {
+        uintptr_t marker = 0;
+        void *ptr;
+    };
 
     /* Main thread data gets created and destroy in initialize and shutdown resp. */
     PerThreadData *tlData = getPerThreadData();
@@ -578,52 +592,54 @@ void JobSystem::runMain() noexcept
         }
 
         // Execute all tasks in Higher priority to lower priority order
-        void *coroPtr = nullptr;
-        for (EJobPriority priority = Priority_Critical; priority < Priority_MaxPriority && coroPtr == nullptr;
+        MarkerOrCoro coroPtr;
+        for (EJobPriority priority = Priority_Critical; priority < Priority_MaxPriority && coroPtr.ptr == nullptr;
              priority = EJobPriority(priority + 1))
         {
             if (!frameEnded[priority])
             {
-                coroPtr = mainThreadJobs[priority].dequeue();
+                coroPtr.ptr = mainThreadJobs[priority].dequeue();
             }
 
             /* Mark frame end reached */
-            if (coroPtr == std::bit_cast<void *>(FRAME_FENCE_MARKER))
+            if (coroPtr.marker == FRAME_FENCE_MARKER)
             {
-                coroPtr = nullptr;
+                coroPtr.marker = 0;
                 frameEnded[priority] = true;
             }
         }
-        while (coroPtr != nullptr)
+        while (coroPtr.ptr != nullptr)
         {
             COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatMainJob"));
 #if COPAT_DEBUG_JOBS
-            pushNextDeq({
-                .fromThreadIdx = 0,
-                .execThreadIdx = 0,
-                .threadType = EJobThreadType::MainThread,
-                .jobHndl = coroPtr,
-                .jobSys = this,
-            });
+            pushNextDeq(
+                {
+                    .fromThreadIdx = 0,
+                    .execThreadIdx = 0,
+                    .threadType = EJobThreadType::MainThread,
+                    .jobHndl = coroPtr,
+                    .jobSys = this,
+                }
+            );
             tlData->currentJobHndl = coroPtr;
 #endif
 
             /* Resume job/task */
-            std::coroutine_handle<>::from_address(coroPtr).resume();
+            std::coroutine_handle<>::from_address(coroPtr.ptr).resume();
 
-            coroPtr = nullptr;
-            for (EJobPriority priority = Priority_Critical; priority < Priority_MaxPriority && coroPtr == nullptr;
+            coroPtr.ptr = nullptr;
+            for (EJobPriority priority = Priority_Critical; priority < Priority_MaxPriority && coroPtr.ptr == nullptr;
                  priority = EJobPriority(priority + 1))
             {
                 if (!frameEnded[priority])
                 {
-                    coroPtr = mainThreadJobs[priority].dequeue();
+                    coroPtr.ptr = mainThreadJobs[priority].dequeue();
                 }
 
                 /* Mark frame end reached */
-                if (coroPtr == std::bit_cast<void *>(FRAME_FENCE_MARKER))
+                if (coroPtr.marker == FRAME_FENCE_MARKER)
                 {
-                    coroPtr = nullptr;
+                    coroPtr.marker = 0;
                     frameEnded[priority] = true;
                 }
             }
@@ -673,13 +689,15 @@ void JobSystem::doWorkerJobs(u32 threadIdx) noexcept
             {
                 COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatWorkerJob"));
 #if COPAT_DEBUG_JOBS
-                pushNextDeq({
-                    .fromThreadIdx = threadIdx,
-                    .execThreadIdx = threadIdx,
-                    .threadType = EJobThreadType::WorkerThreads,
-                    .jobHndl = coroPtr,
-                    .jobSys = this,
-                });
+                pushNextDeq(
+                    {
+                        .fromThreadIdx = threadIdx,
+                        .execThreadIdx = threadIdx,
+                        .threadType = EJobThreadType::WorkerThreads,
+                        .jobHndl = coroPtr,
+                        .jobSys = this,
+                    }
+                );
                 tlData->currentJobHndl = coroPtr;
 #endif
                 /* Resume job/task */
@@ -707,13 +725,15 @@ void JobSystem::doWorkerJobs(u32 threadIdx) noexcept
                 {
                     COPAT_PROFILER_SCOPE_VALUE(COPAT_PROFILER_CHAR("CopatStolenJob"), stealFromThreadIdx);
 #if COPAT_DEBUG_JOBS
-                    pushNextDeq({
-                        .fromThreadIdx = stealFromThreadIdx,
-                        .execThreadIdx = threadIdx,
-                        .threadType = EJobThreadType::WorkerThreads,
-                        .jobHndl = coroPtr,
-                        .jobSys = this,
-                    });
+                    pushNextDeq(
+                        {
+                            .fromThreadIdx = stealFromThreadIdx,
+                            .execThreadIdx = threadIdx,
+                            .threadType = EJobThreadType::WorkerThreads,
+                            .jobHndl = coroPtr,
+                            .jobSys = this,
+                        }
+                    );
                     tlData->currentJobHndl = coroPtr;
 #endif
                     /* Resume job/task */
@@ -763,13 +783,15 @@ void JobSystem::doJobSysThreadJobs(class JobSystemThread &jsThread) noexcept
         {
             COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatSpecialJob"));
 #if COPAT_DEBUG_JOBS
-            pushNextDeq({
-                .fromThreadIdx = 0,
-                .execThreadIdx = 0,
-                .threadType = jsThread.threadType,
-                .jobHndl = coroPtr,
-                .jobSys = this,
-            });
+            pushNextDeq(
+                {
+                    .fromThreadIdx = 0,
+                    .execThreadIdx = 0,
+                    .threadType = jsThread.threadType,
+                    .jobHndl = coroPtr,
+                    .jobSys = this,
+                }
+            );
             tlData->currentJobHndl = coroPtr;
 #endif
             /* Resume job/task */
@@ -860,14 +882,15 @@ void WorkerThreadsPool::initialize(JobSystem *jobSystem, WorkerThreadQueueType::
     ownerJobSystem = jobSystem;
 
     /* Allocate all the data necessary */
-    const u64 totalAllocSize = (sizeof(JobReceivedEvent) * workersCount) + (sizeof(WorkerThreadQueueType) * workerQsCount())
-                               + (sizeof(WorkerQHazardToken) * hazardTokensCount());
-    constexpr u64 allocAlignment = AlignmentOf<JobReceivedEvent, WorkerThreadQueueType, WorkerQHazardToken>;
+    const u64 totalAllocSize = (sizeof(JobReceivedEvent) * workersCount) + (sizeof(PerWorkerData) * workersCount)
+                               + (sizeof(WorkerThreadQueueType) * workerQsCount()) + (sizeof(WorkerQHazardToken) * hazardTokensCount());
+    constexpr u64 allocAlignment = AlignmentOf<JobReceivedEvent, WorkerThreadQueueType, WorkerQHazardToken, PerWorkerData>;
     workerAllocations = CoPaTMemAlloc::memAlloc(totalAllocSize, allocAlignment);
     u64 workerAllocsAddr = reinterpret_cast<u64>(workerAllocations);
 
     static_assert(
-        alignof(WorkerThreadQueueType) >= alignof(JobReceivedEvent) && alignof(WorkerThreadQueueType) >= alignof(WorkerQHazardToken),
+        alignof(WorkerThreadQueueType) >= alignof(JobReceivedEvent) && alignof(WorkerThreadQueueType) >= alignof(WorkerQHazardToken)
+            && alignof(WorkerQHazardToken) >= alignof(PerWorkerData),
         "[Alignment Error]Allocation order must be redone!"
     );
     /* Worker Queues are in the front */
@@ -878,6 +901,8 @@ void WorkerThreadsPool::initialize(JobSystem *jobSystem, WorkerThreadQueueType::
     /* Hazard tokens are after both Worker Queues and Worker Job events */
     workerAllocsAddr += sizeof(JobReceivedEvent) * workersCount;
     hazardTokens = reinterpret_cast<WorkerQHazardToken *>(workerAllocsAddr);
+    workerAllocsAddr += sizeof(WorkerQHazardToken) * hazardTokensCount();
+    perWorkerData = reinterpret_cast<PerWorkerData *>(workerAllocsAddr);
 
     /* Initialize Qs, Job events. Hazard tokens will defer initialization until allocated */
     for (u32 i = 0; i < workerQsCount(); ++i)
@@ -888,7 +913,43 @@ void WorkerThreadsPool::initialize(JobSystem *jobSystem, WorkerThreadQueueType::
     for (u32 i = 0; i < workersCount; ++i)
     {
         new (workerJobEvents + i) JobReceivedEvent();
+        new (perWorkerData + i) PerWorkerData();
     }
+}
+
+bool WorkerThreadsPool::tryShutdown() noexcept
+{
+    COPAT_ASSERT(workersCount != 0);
+    COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatSpecialThreadsShutdown"));
+
+    for (u32 i = 0; i < workersCount; ++i)
+    {
+        workerJobEvents[i].notify();
+    }
+    if (!allWorkersExitEvent.try_wait())
+    {
+        return false;
+    }
+
+    /* Manually destruct everything for correctness */
+    for (u32 i = 0; i < workersCount; ++i)
+    {
+        workerJobEvents[i].~JobReceivedEvent();
+        perWorkerData[i].~PerWorkerData();
+    }
+    for (u32 i = 0; i < workerQsCount(); ++i)
+    {
+        workerQs[i].~FAAArrayQueue();
+    }
+
+    /* Free all the data in one go */
+    CoPaTMemAlloc::memFree(workerAllocations);
+    workerAllocations = nullptr;
+    workerJobEvents = nullptr;
+    workerQs = nullptr;
+    perWorkerData = nullptr;
+
+    return true;
 }
 
 void WorkerThreadsPool::run(INTERNAL_DoWorkerThreadFuncType doWorkerJobFunc, bool bSetAffinity) noexcept
@@ -946,41 +1007,12 @@ void WorkerThreadsPool::run(INTERNAL_DoWorkerThreadFuncType doWorkerJobFunc, boo
     }
 }
 
-bool WorkerThreadsPool::tryShutdown() noexcept
-{
-    COPAT_ASSERT(workersCount != 0);
-    COPAT_PROFILER_SCOPE(COPAT_PROFILER_CHAR("CopatSpecialThreadsShutdown"));
-
-    for (u32 i = 0; i < workersCount; ++i)
-    {
-        workerJobEvents[i].notify();
-    }
-    if (!allWorkersExitEvent.try_wait())
-    {
-        return false;
-    }
-
-    /* Only queues needs to be manually destructed */
-    for (u32 i = 0; i < workerQsCount(); ++i)
-    {
-        workerQs[i].~FAAArrayQueue();
-    }
-
-    /* Free all the data in one go */
-    CoPaTMemAlloc::memFree(workerAllocations);
-    workerAllocations = nullptr;
-    workerJobEvents = nullptr;
-    workerQs = nullptr;
-
-    return true;
-}
-
 bool WorkerThreadsPool::hasJob(u32 threadIdx, EJobPriority priority, WorkerQHazardToken *fromThreadTokens) const noexcept
 {
     bool bAnyJobs = false;
     for (EJobPriority p = Priority_Critical; p <= priority; p = EJobPriority(p + 1))
     {
-        const u32 qIdx = pAndTTypeToIdx(threadIdx, priority);
+        const u32 qIdx = pAndTTypeToIdx(threadIdx, p);
         bAnyJobs = bAnyJobs || !workerQs[qIdx].empty(fromThreadTokens[qIdx]);
     }
     return bAnyJobs;
@@ -1025,10 +1057,21 @@ void WorkerThreadsPool::enqueueJob(std::coroutine_handle<> coro, EJobPriority pr
 {
     COPAT_ASSERT(!allWorkersExitEvent.try_wait());
 
+    u32 checkedWorkersCount = 0;
     /* Unsigned int overflow is a defined behavior, Equivalent to modulo by u32 max
-     * Just the number matters ordering is not necessary here
+     * Just the number matters, ordering is not necessary here.
      */
-    const u32 threadIdx = nextEnqToQ.fetch_add(1, std::memory_order::relaxed) % workersCount;
+    u32 threadIdx = nextEnqToQ.fetch_add(1, std::memory_order::relaxed) % workersCount;
+    /* If we have checked all worker we have to enqueue it any way so just */
+    while (perWorkerData[threadIdx].blockedEnqCounter.load(std::memory_order::relaxed) != 0 && checkedWorkersCount < workersCount)
+    {
+        threadIdx = nextEnqToQ.fetch_add(1, std::memory_order::relaxed) % workersCount;
+        checkedWorkersCount++;
+    }
+    COPAT_ASSERT(
+        checkedWorkersCount < workersCount && "Enqueuing issue: no worker available to accept new job but forcefully enqueued to worker"
+    );
+
     const u32 qIdx = pAndTTypeToIdx(threadIdx, priority);
 
     if (fromThreadTokens != nullptr)
@@ -1192,6 +1235,7 @@ const SpecialThreadQueueType &JobSystemThread::getThreadJobsQueue(EJobPriority p
 #if COPAT_DEBUG_JOBS
 namespace copat
 {
+
 void JobSystem::pushNextEnq(EnqueueDump &&dump)
 {
     std::vector<EnqueueDump> eQDumps;

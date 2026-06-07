@@ -142,7 +142,7 @@ struct HazardPointerDeleter<FAAArrayQueueNode<T>>
 {
     using NodeType = FAAArrayQueueNode<T>;
 
-    void operator() (NodeType *ptr) noexcept
+    void operator () (NodeType *ptr) noexcept
     {
         QueueNodeAllocTracker::onDelete();
         memDelete(ptr);
@@ -475,7 +475,6 @@ public:
                     }
 
                     // Construct new node
-                    newNode = new (newNode) Node(item);
                     newNode = new (newNode) Node(item);
                     if (ltail->casNext(nullptr, newNode))
                     {

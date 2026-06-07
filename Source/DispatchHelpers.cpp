@@ -4,9 +4,9 @@
  * \author Jeslas
  * \date June 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2025
+ *  Copyright (C) Jeslas Pravin, 2022-2026
  *  @jeslaspravin pravinjeslas@gmail.com
- *  License can be read in LICENSE file at this repository's root
+ *  MIT Licensed. Full license is in LICENSE file at this repository's root
  */
 
 #include "DispatchHelpers.h"
@@ -17,6 +17,7 @@
 COPAT_NS_INLINED
 namespace copat
 {
+
 // Just copying the callback so a copy exists inside dispatch
 static DispatchAwaitableType dispatchOneTask(JobSystem *, EJobPriority, DispatchFunctionType callback, u64 jobIdx) noexcept
 {
@@ -34,7 +35,8 @@ static DispatchAwaitableType dispatchTaskGroup(JobSystem *, EJobPriority, Dispat
 }
 
 AwaitAllTasks<std::vector<DispatchAwaitableType>> dispatch(
-    JobSystem *jobSys, const DispatchFunctionType &callback, u64 count, EJobPriority jobPriority /* = EJobPriority::Priority_Normal */
+    JobSystem *jobSys, const DispatchFunctionType &callback, u64 count, EJobPriority jobPriority /* = EJobPriority::Priority_Normal */,
+    bool bSafeDispatch /* = false */
 ) noexcept
 {
     if (count == 0)
@@ -58,6 +60,12 @@ AwaitAllTasks<std::vector<DispatchAwaitableType>> dispatch(
         return {};
     }
 
+    BlockWorkerEnq safetyBlock;
+    if (bSafeDispatch)
+    {
+        safetyBlock = BlockWorkerEnq{ jobSys };
+    }
+
     std::vector<DispatchAwaitableType> dispatchedJobs;
     /**
      * If there is no worker threads then we cannot actually diverge.
@@ -70,7 +78,7 @@ AwaitAllTasks<std::vector<DispatchAwaitableType>> dispatch(
         return awaitAllTasks(std::move(dispatchedJobs));
     }
 
-    const u32 grpCount = jobSys->getWorkersCount();
+    const u32 grpCount = jobSys->getAvailableWorkersCount();
     const u64 jobsPerGrp = count / grpCount;
     // If dispatching count is less than max workers count
     if (jobsPerGrp == 0)
@@ -113,14 +121,14 @@ void parallelFor(
 
     COPAT_ASSERT(jobSys);
 
-    const u32 grpCount = jobSys->getWorkersCount();
+    const u32 grpCount = jobSys->getAvailableWorkersCount();
 
     // If dispatching count is less than max workers count then jobsPerGrp will be 1
     // Else it will be jobsPerGrp or jobsPerGrp + 1 depending on count equiv-distributable among workers
     u64 jobsPerGrp = count / grpCount;
     jobsPerGrp += static_cast<u64>((count % grpCount) > 0);
 
-    AwaitAllTasks<std::vector<DispatchAwaitableType>> allAwaits = dispatch(jobSys, callback, count - jobsPerGrp, jobPriority);
+    AwaitAllTasks<std::vector<DispatchAwaitableType>> allAwaits = dispatch(jobSys, callback, count - jobsPerGrp, jobPriority, true);
     for (u64 jobIdx = count - jobsPerGrp; jobIdx < count; ++jobIdx)
     {
         callback(jobIdx);

@@ -4,9 +4,9 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2024
+ *  Copyright (C) Jeslas Pravin, 2022-2026
  *  @jeslaspravin pravinjeslas@gmail.com
- *  License can be read in LICENSE file at this repository's root
+ *  MIT Licensed. Full license is in LICENSE file at this repository's root
  */
 
 #pragma once
@@ -42,7 +42,7 @@ public:
     {
         other.ownerCoroutine = nullptr;
     }
-    WaitOnAwaitable &operator= (WaitOnAwaitable &&other)
+    WaitOnAwaitable &operator = (WaitOnAwaitable &&other)
     {
         if (ownerCoroutine)
         {
@@ -65,7 +65,7 @@ public:
     // Delete copy and default initializations
     WaitOnAwaitable() = delete;
     WaitOnAwaitable(const WaitOnAwaitable &) = delete;
-    WaitOnAwaitable &operator= (const WaitOnAwaitable &) = delete;
+    WaitOnAwaitable &operator = (const WaitOnAwaitable &) = delete;
 
     struct PromiseType
     {

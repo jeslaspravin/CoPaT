@@ -4,9 +4,9 @@
  * \author Jeslas
  * \date June 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2025
+ *  Copyright (C) Jeslas Pravin, 2022-2026
  *  @jeslaspravin pravinjeslas@gmail.com
- *  License can be read in LICENSE file at this repository's root
+ *  MIT Licensed. Full license is in LICENSE file at this repository's root
  */
 
 #pragma once
@@ -17,39 +17,85 @@
 COPAT_NS_INLINED
 namespace copat
 {
+
 class JobSystem;
 class JobSystemPromiseBase;
 
+/**
+ * @brief Coroutine task wrapped for job system enqueue.
+ *
+ * @tparam RetType Return type of the task.
+ * @tparam BasePromiseType Promise type used to drive the coroutine.
+ * @tparam EnqAtInitialSuspend Whether the task is enqueued on the initial suspend.
+ * @tparam EnqueueInThread Target thread for dispatch.
+ * @tparam Priority Job priority.
+ */
 template <typename RetType, typename BasePromiseType, bool EnqAtInitialSuspend, EJobThreadType EnqueueInThread, EJobPriority Priority>
 class JobSystemTaskType;
 
+/**
+ * @brief Waits for a collection of dispatched tasks to complete.
+ *
+ * @tparam AwaitingCollection Container holding the individual awaitables.
+ */
 template <typename AwaitingCollection>
 class AwaitAllTasks;
 
+/**
+ * @brief Awaiter returned by fireAndForget.
+ */
 struct NormalFuncAwaiter;
 
+/**
+ * @brief Awaitable returned by dispatch when the job produces a value.
+ *
+ * @tparam RetType Value returned by the job.
+ */
 template <typename RetType>
 using DispatchAwaitableTypeWithRet
     = JobSystemTaskType<RetType, JobSystemPromiseBase, true, EJobThreadType::WorkerThreads, EJobPriority::Priority_Normal>;
+
+/**
+ * @brief Callback signature for dispatch. Takes a u64 job index and returns RetType.
+ *
+ * @tparam RetType Return type (void for fire-and-forget).
+ */
 template <typename RetType>
 using DispatchFunctionTypeWithRet = FunctionType<RetType, u64>;
 
 using DispatchAwaitableType = DispatchAwaitableTypeWithRet<void>;
 using DispatchFunctionType = DispatchFunctionTypeWithRet<void>;
 
+/**
+ * @brief Coroutine that collects per-job return values into a vector.
+ *
+ * @tparam RetType Element type.
+ */
 template <typename RetType>
 using ConvergeAwaitable
     = JobSystemTaskType<std::vector<RetType>, JobSystemPromiseBase, false, EJobThreadType::WorkerThreads, EJobPriority::Priority_Normal>;
 
+/**
+ * @brief Dispatch count jobs to workers and return an awaitable.
+ *
+ * Each job calls callback with an index from 0 to count-1.
+ * co_await the result to wait for completion.
+ */
 COPAT_EXPORT_SYM AwaitAllTasks<std::vector<DispatchAwaitableType>> dispatch(
-    JobSystem *jobSys, const DispatchFunctionType &callback, u64 count, EJobPriority jobPriority = EJobPriority::Priority_Normal
+    JobSystem *jobSys, const DispatchFunctionType &callback, u64 count, EJobPriority jobPriority = EJobPriority::Priority_Normal,
+    bool bSafeDispatch = false
 ) noexcept;
 
-// Dispatch and wait immediately
+/**
+ * @brief Dispatch count jobs and block until they are done.
+ */
 COPAT_EXPORT_SYM void parallelFor(
     JobSystem *jobSys, const DispatchFunctionType &callback, u64 count, EJobPriority jobPriority = EJobPriority::Priority_Normal
 ) noexcept;
 
+/**
+ * @brief Call a function returning an awaitable and co_await it without blocking.
+ */
 template <typename FuncType, typename... Args>
 NormalFuncAwaiter fireAndForget(FuncType &&func, Args &&...args) noexcept
 {
@@ -57,10 +103,16 @@ NormalFuncAwaiter fireAndForget(FuncType &&func, Args &&...args) noexcept
     co_await funcCopy(std::forward<Args>(args)...);
 }
 
+/**
+ * @brief Type traits and helpers for diverge/converge.
+ *
+ * @tparam RetType Return type declared by the callback.
+ */
 template <typename RetType>
 struct DispatchWithReturn
 {
 public:
+    // Resolve the actual return type. For awaitable types this unwraps to the awaited value.
     template <typename T>
     struct ReturnTypeTraits
     {
@@ -73,16 +125,20 @@ public:
     };
     using PossibleReturnType = typename ReturnTypeTraits<RetType>::PossibleReturnType;
 
+    // Strip reference and const so the result is always movable
     using ReturnType = std::conditional_t<
         std::disjunction_v<std::is_reference<PossibleReturnType>, std::is_const<std::remove_reference_t<PossibleReturnType>>>,
-        std::remove_reference_t<PossibleReturnType>, PossibleReturnType>;
+        std::remove_reference_t<PossibleReturnType>, PossibleReturnType
+    >;
 
     using AwaitableType = DispatchAwaitableTypeWithRet<std::vector<ReturnType>>;
     using FuncType = DispatchFunctionTypeWithRet<RetType>;
-    /* Fundamental types used as reference and moving into result array is inefficient */
+    // Fundamental types by reference are inefficient so pass by value
     using RetTypeRef = std::conditional_t<std::is_fundamental_v<ReturnType>, ReturnType, ReturnType &>;
 
-    // Just copying the callback so a copy exists inside dispatch
+    /**
+     * @brief Run one callback invocation and return the result in a vector.
+     */
     static AwaitableType dispatchOneTask(JobSystem &, EJobPriority, FuncType callback, u64 jobIdx) noexcept
     {
         std::vector<ReturnType> retVal;
@@ -99,6 +155,10 @@ public:
         }
         co_return retVal;
     }
+
+    /**
+     * @brief Run a range of callback invocations and collect the results.
+     */
     static AwaitableType dispatchTaskGroup(JobSystem &, EJobPriority, FuncType callback, u64 fromJobIdx, u64 count) noexcept
     {
         std::vector<ReturnType> retVal;
@@ -122,8 +182,14 @@ public:
         co_return retVal;
     }
 
+    /**
+     * @brief Partition jobs across workers and dispatch them.
+     *
+     * If there are fewer jobs than workers each runs in its own task.
+     * In single-threaded mode all jobs are bundled into one task.
+     */
     static AwaitAllTasks<std::vector<AwaitableType>>
-    dispatch(JobSystem *jobSys, const FuncType &callback, u64 count, EJobPriority jobPriority) noexcept
+    dispatch(JobSystem *jobSys, const FuncType &callback, u64 count, EJobPriority jobPriority, bool bSafeDispatch) noexcept
     {
         if (count == 0)
         {
@@ -144,7 +210,13 @@ public:
             return awaitAllTasks(std::move(dispatchedJobs));
         }
 
-        const u32 grpCount = jobSys->getWorkersCount();
+        BlockWorkerEnq safetyBlock;
+        if (bSafeDispatch)
+        {
+            safetyBlock = BlockWorkerEnq{ jobSys };
+        }
+
+        const u32 grpCount = jobSys->getAvailableWorkersCount();
         u64 jobsPerGrp = count / grpCount;
         // If dispatching count is less than max workers count
         if (jobsPerGrp == 0)
@@ -162,7 +234,7 @@ public:
             u64 jobIdx = 0;
             for (u32 i = 0; i < grpsWithMoreJobCount; ++i)
             {
-                // Add one more job for all grps with more jobs
+                // Add one more job for all groups with more jobs
                 dispatchedJobs.emplace_back(dispatchTaskGroup(*jobSys, jobPriority, callback, jobIdx, jobsPerGrp + 1));
                 jobIdx += jobsPerGrp + 1;
             }
@@ -178,12 +250,14 @@ public:
 };
 
 /**
- * This function assumes that worker threads exists and enqueue will work without any issue
+ * @brief Dispatch jobs that return values.
+ *
+ * Pass the returned awaitable to converge or awaitConverge.
  */
 template <typename RetType>
 auto diverge(
     JobSystem *jobSys, const DispatchFunctionTypeWithRet<RetType> &callback, u64 count,
-    EJobPriority jobPriority = EJobPriority::Priority_Normal
+    EJobPriority jobPriority = EJobPriority::Priority_Normal, bool bSafeDispatch = false
 ) noexcept
 {
     using DispatcherType = DispatchWithReturn<RetType>;
@@ -191,9 +265,12 @@ auto diverge(
         std::is_same_v<DispatchFunctionTypeWithRet<RetType>, typename DispatcherType::FuncType>,
         "Type mismatch between dispatch and diverge functions"
     );
-    return DispatcherType::dispatch(jobSys, std::forward<decltype(callback)>(callback), count, jobPriority);
+    return DispatcherType::dispatch(jobSys, std::forward<decltype(callback)>(callback), count, jobPriority, bSafeDispatch);
 }
 
+/**
+ * @brief Block and collect results from diverge.
+ */
 template <typename RetType>
 std::vector<RetType> converge(AwaitAllTasks<std::vector<DispatchAwaitableTypeWithRet<std::vector<RetType>>>> &&allAwaits) noexcept
 {
@@ -214,6 +291,11 @@ std::vector<RetType> converge(AwaitAllTasks<std::vector<DispatchAwaitableTypeWit
     }
     return retVals;
 }
+/**
+ * @brief Collect results asynchronously via a coroutine.
+ *
+ * Returns a ConvergeAwaitable instead of blocking.
+ */
 template <typename RetType>
 ConvergeAwaitable<RetType> awaitConverge(AwaitAllTasks<std::vector<DispatchAwaitableTypeWithRet<std::vector<RetType>>>> &&allAwaits) noexcept
 {
@@ -237,7 +319,12 @@ ConvergeAwaitable<RetType> awaitConverge(AwaitAllTasks<std::vector<DispatchAwait
     co_return retVals;
 }
 
-// diverge, converge immediately and returns the result
+/**
+ * @brief Diverge and converge in one call.
+ *
+ * The last group of jobs runs on the calling thread so workers
+ * are required for the remaining jobs.
+ */
 template <typename RetType>
 std::vector<RetType> parallelForReturn(
     JobSystem *jobSys, const DispatchFunctionTypeWithRet<RetType> &callback, u64 count,
@@ -254,19 +341,19 @@ std::vector<RetType> parallelForReturn(
     }
 
     /**
-     * Cannot diverge and converge here if there is not workers.
+     * Cannot diverge and converge here if there is no workers.
      * Caller must call diverge and converge separately making sure not to dead lock.
      */
     COPAT_ASSERT(jobSys && jobSys->enqToThreadType(EJobThreadType::WorkerThreads) == EJobThreadType::WorkerThreads);
 
-    const u32 grpCount = jobSys->getWorkersCount();
+    const u32 grpCount = jobSys->getAvailableWorkersCount();
 
     // If dispatching count is less than max workers count then jobsPerGrp will be 1
     // Else it will be jobsPerGrp or jobsPerGrp + 1 depending on count equiv-distributable among workers
     u64 jobsPerGrp = count / grpCount;
     jobsPerGrp += (count % grpCount) > 0;
 
-    AwaitAllTasks<std::vector<AwaitableType>> allAwaits = diverge(jobSys, callback, count - jobsPerGrp, jobPriority);
+    AwaitAllTasks<std::vector<AwaitableType>> allAwaits = diverge(jobSys, callback, count - jobsPerGrp, jobPriority, true);
 
     std::vector<RetType> lastGrpRets;
     lastGrpRets.reserve(jobsPerGrp);

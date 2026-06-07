@@ -4,9 +4,9 @@
  * \author Jeslas
  * \date May 2022
  * \copyright
- *  Copyright (C) Jeslas Pravin, 2022-2024
+ *  Copyright (C) Jeslas Pravin, 2022-2026
  *  @jeslaspravin pravinjeslas@gmail.com
- *  License can be read in LICENSE file at this repository's root
+ *  MIT Licensed. Full license is in LICENSE file at this repository's root
  */
 
 #pragma once
@@ -28,7 +28,7 @@ namespace copat
 template <typename HazardType>
 struct HazardPointerDeleter
 {
-    void operator() (HazardType *ptr) { memDelete(ptr); }
+    void operator () (HazardType *ptr) { memDelete(ptr); }
 };
 
 /**
@@ -141,7 +141,7 @@ public:
         {
             other.record = nullptr;
         }
-        HazardPointer &operator= (HazardPointer &&other) noexcept
+        HazardPointer &operator = (HazardPointer &&other) noexcept
         {
             if (record)
             {
@@ -163,7 +163,7 @@ public:
         // No copying allowed
         HazardPointer() = delete;
         HazardPointer(const HazardPointer &) = delete;
-        HazardPointer &operator= (const HazardPointer &) = delete;
+        HazardPointer &operator = (const HazardPointer &) = delete;
     };
 
     static_assert((ReuseQueueLength & (ReuseQueueLength - 1)) == 0, "Reuse ring buffer length must be a power of 2");
